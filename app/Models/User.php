@@ -23,9 +23,16 @@ class User extends Authenticatable
         'email',
         'password',
         'google_id',
-        'google_token',
-        'google_refresh_token',
     ];
+
+    public function dashboardRoute(): string
+    {
+        return match ($this->system_role) {
+            'admin' => 'admin.dashboard',
+            'user' => 'dashboard',
+            default => abort(403, 'Your account does not have dashboard access.'),
+        };
+    }
 
     /**
      * The attributes that should be hidden for serialization.
