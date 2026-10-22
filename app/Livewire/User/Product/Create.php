@@ -19,8 +19,8 @@ use Throwable;
 #[Layout('components.layouts.user')]
 class Create extends Component
 {
-    use WithFileUploads;
     use CreatesProductLookups;
+    use WithFileUploads;
 
     public string $category_id = '';
 
@@ -67,9 +67,9 @@ class Create extends Component
             'description' => ['nullable', 'string', 'max:5000'],
             'cost_price' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
             'selling_price' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
-            'initial_stock' => ['required', 'numeric', 'min:0', 'max:999999999.999'],
+            'initial_stock' => ['required', 'integer', 'min:0', 'max:999999999'],
             'unit' => ['required', Rule::enum(ProductUnit::class)],
-            'reorder_level' => ['nullable', 'numeric', 'min:0', 'max:999999999.999'],
+            'reorder_level' => ['nullable', 'integer', 'min:0', 'max:999999999'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ];
     }
@@ -169,6 +169,7 @@ class Create extends Component
                     'subtitle' => collect([$supplier->contact_person, $supplier->phone])->filter()->implode(' · '),
                 ]),
             'units' => ProductUnit::cases(),
+            'existingSkus' => Product::query()->pluck('sku'),
         ]);
     }
 }

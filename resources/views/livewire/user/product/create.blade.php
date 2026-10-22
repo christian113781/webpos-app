@@ -3,11 +3,23 @@
     tabindex="-1"
     class="flex-1 px-4 sm:px-6 py-6 max-w-[1600px] mx-auto w-full"
     x-data="{
-        generateSku() {
-            const category = document.getElementById('product-category-trigger');
-            const categoryName = category?.textContent.trim() ?? '';
-            const prefix = categoryName ? categoryName.replace(/[^a-z0-9]/gi, '').slice(0, 3).toUpperCase() : 'PRD';
-            $wire.sku = prefix + '-' + Date.now().toString().slice(-6);
+        sku: $wire.entangle('sku'),
+        existingSkus: @js($existingSkus),
+        generateSku(name) {
+            const letters = (name.match(/[a-z]/gi) ?? []).slice(0, 3).join('').toUpperCase();
+            if (!letters) {
+                this.sku = '';
+                return;
+            }
+
+            const prefix = letters.padEnd(3, 'X');
+            const pattern = new RegExp('^' + prefix + '-([0-9]+)$', 'i');
+            const lastNumber = this.existingSkus.reduce((max, sku) => {
+                const match = sku.match(pattern);
+                return match ? Math.max(max, Number(match[1])) : max;
+            }, 0);
+
+            this.sku = prefix + '-' + (lastNumber + 1);
         }
     }"
 >
@@ -62,31 +74,21 @@
                     <p class="text-xs text-gray-400 mt-0.5 mb-4">Name, codes and a short description.</p>
 
                     <div class="space-y-4">
-                        <x-ui.input name="name" wire:model="name" label="Product Name" placeholder="e.g. Lucky Me Pancit Canton" autocomplete="off" required />
+                        <x-ui.input name="name" wire:model="name" x-on:input="generateSku($event.target.value)" label="Product Name" placeholder="e.g. Lucky Me Pancit Canton" autocomplete="off" required />
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label for="product-sku" class="block text-xs font-semibold text-gray-600 mb-1.5">SKU <span class="text-red-500" aria-hidden="true">*</span></label>
-                                <div class="flex gap-2">
-                                    <input
-                                        id="product-sku"
-                                        name="sku"
-                                        wire:model="sku"
-                                        type="text"
-                                        class="field rounded-xl min-w-0 @error('sku') error @enderror"
-                                        placeholder="e.g. GRO-0001"
-                                        autocomplete="off"
-                                        required
-                                    >
-                                    <button
-                                        type="button"
-                                        x-on:click="generateSku()"
-                                        class="shrink-0 rounded-xl bg-brand-50 px-3 text-xs font-semibold text-brand-700 transition-colors hover:bg-brand-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600"
-                                        title="Generate SKU from category"
-                                    >
-                                        Auto
-                                    </button>
-                                </div>
+                                <input
+                                    id="product-sku"
+                                    name="sku"
+                                    x-model="sku"
+                                    type="text"
+                                    class="field rounded-xl min-w-0 @error('sku') error @enderror"
+                                    placeholder="SKU"
+                                    autocomplete="off"
+                                    required
+                                >
                                 @error('sku') <p class="mt-1 text-xs text-red-500" role="alert">{{ $message }}</p> @enderror
                             </div>
                             <x-ui.input name="barcode" wire:model="barcode" label="Barcode" optional placeholder="Scan or type barcode" inputmode="numeric" autocomplete="off" />
@@ -147,8 +149,8 @@
                             :label="$isEditing ? 'On Hand' : 'Initial Stock'"
                             type="number"
                             min="0"
-                            step="0.001"
-                            inputmode="decimal"
+                            step="1"
+                            inputmode="numeric"
                             placeholder="0"
                             required
                         />
@@ -165,8 +167,8 @@
                             label="Reorder Level"
                             type="number"
                             min="0"
-                            step="0.001"
-                            inputmode="decimal"
+                            step="1"
+                            inputmode="numeric"
                             placeholder="0"
                         />
                         <x-ui.input

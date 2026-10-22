@@ -163,9 +163,6 @@
         <div class="flex-1 flex flex-col min-w-0">
             <x-user.header />
             {{ $slot }}
-            <footer class="border-t border-gray-100 px-6 py-4 text-center text-xs text-gray-400">
-                {{ config('app.name', 'TalipapaPOS') }} &copy; {{ now()->year }}
-            </footer>
         </div>
     </div>
 

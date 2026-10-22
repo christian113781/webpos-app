@@ -63,6 +63,7 @@ class ProductEditPageTest extends TestCase
             ->assertSet('category_id', (string) $category->id)
             ->assertSet('supplier_id', (string) $supplier->id)
             ->assertSet('initial_stock', '7')
+            ->assertSet('reorder_level', '2')
             ->assertSet('unit', 'bottle');
     }
 
@@ -108,6 +109,25 @@ class ProductEditPageTest extends TestCase
             'quantity' => 4,
             'notes' => 'Stock adjustment from product edit',
         ]);
+    }
+
+    public function test_product_edit_requires_whole_number_stock_and_reorder_level(): void
+    {
+        $category = Category::create(['name' => 'Beverages']);
+        $product = Product::create([
+            'category_id' => $category->id,
+            'name' => 'Spring Water',
+            'sku' => 'WAT-001',
+        ]);
+
+        Livewire::test(Edit::class, ['product' => $product])
+            ->set('initial_stock', '1.5')
+            ->set('reorder_level', '0.5')
+            ->call('save')
+            ->assertHasErrors([
+                'initial_stock' => 'integer',
+                'reorder_level' => 'integer',
+            ]);
     }
 
     public function test_product_image_can_be_replaced_or_removed_during_edit(): void

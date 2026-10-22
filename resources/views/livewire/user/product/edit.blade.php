@@ -1,3 +1,1 @@
-<div>
-    {{-- Smile, breathe, and go slowly. - Thich Nhat Hanh --}}
-</div>
+@include('livewire.user.product.create')

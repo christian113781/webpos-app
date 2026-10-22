@@ -45,6 +45,7 @@ class ProductCreatePageTest extends TestCase
             ->assertSee('Selling Price (₱)')
             ->assertSee('Description')
             ->assertSee('Initial Stock')
+            ->assertSee('placeholder="0"', false)
             ->assertSee('Expiration')
             ->assertSee('(optional)')
             ->assertSee('City Wholesale')
@@ -54,7 +55,11 @@ class ProductCreatePageTest extends TestCase
             ->assertSee('product-create-layout', false)
             ->assertSee('product-create-form-sections', false)
             ->assertSee('product-create-image-column', false)
-            ->assertSee('x-on:click="generateSku()"', false)
+            ->assertSee('wire:model="name"', false)
+            ->assertSee('x-on:input="generateSku($event.target.value)"', false)
+            ->assertSee('$wire.entangle(\'sku\')', false)
+            ->assertSee('existingSkus:', false)
+            ->assertDontSee('>Auto</button>', false)
             ->assertSee('x-on:change="setPreview($event)"', false)
             ->assertSee('sm:w-24 lg:mt-4 lg:aspect-square lg:h-auto lg:w-full', false)
             ->assertDontSee('Back to products')
@@ -81,6 +86,18 @@ class ProductCreatePageTest extends TestCase
             'phone' => '0917 555 0100',
             'status' => 'active',
         ]);
+    }
+
+    public function test_product_create_sku_generation_is_frontend_driven_with_server_validation(): void
+    {
+        Product::create(['name' => 'Existing first SKU', 'sku' => 'LUC-1']);
+        Product::create(['name' => 'Existing third SKU', 'sku' => 'LUC-3']);
+
+        Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
+            ->test(Create::class)
+            ->assertSee('LUC-1')
+            ->assertSee('LUC-3')
+            ->assertSee('existingSkus:', false);
     }
 
     public function test_lookup_add_selects_existing_names_and_rejects_inactive_matches(): void
@@ -186,6 +203,23 @@ class ProductCreatePageTest extends TestCase
         $this->assertDatabaseCount('products', 1);
     }
 
+    public function test_product_stock_and_reorder_level_must_be_whole_numbers(): void
+    {
+        Livewire::test(Create::class)
+            ->set('category_id', (string) Category::create(['name' => 'Beverages'])->id)
+            ->set('name', 'Spring Water')
+            ->set('sku', 'WAT-001')
+            ->set('cost_price', '10')
+            ->set('selling_price', '15')
+            ->set('initial_stock', '1.5')
+            ->set('reorder_level', '0.5')
+            ->call('save')
+            ->assertHasErrors([
+                'initial_stock' => 'integer',
+                'reorder_level' => 'integer',
+            ]);
+    }
+
     public function test_product_image_is_stored_and_save_add_another_resets_the_form(): void
     {
         Storage::fake('public');
@@ -204,6 +238,7 @@ class ProductCreatePageTest extends TestCase
             ->assertSet('name', '')
             ->assertSet('sku', '')
             ->assertSet('initial_stock', '0')
+            ->assertSet('reorder_level', '0')
             ->assertSet('unit', 'piece')
             ->assertDispatched('toast', message: 'Product created. You can add another.')
             ->assertDispatched('product-image-reset');

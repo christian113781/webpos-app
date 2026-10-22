@@ -69,9 +69,9 @@ class Edit extends Component
         $stockOut = (float) $product->inventoryMovements()
             ->where('type', 'stock_out')
             ->sum('quantity');
-        $this->initial_stock = (string) max(0, $stockIn - $stockOut);
+        $this->initial_stock = (string) (int) round(max(0, $stockIn - $stockOut));
         $this->unit = $product->unit?->value ?? ProductUnit::Piece->value;
-        $this->reorder_level = (string) $product->reorder_level;
+        $this->reorder_level = (string) (int) round((float) ($product->reorder_level ?? 0));
     }
 
     protected function rules(): array
@@ -97,9 +97,9 @@ class Edit extends Component
             'description' => ['nullable', 'string', 'max:5000'],
             'cost_price' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
             'selling_price' => ['required', 'numeric', 'min:0', 'max:9999999999.99'],
-            'initial_stock' => ['required', 'numeric', 'min:0', 'max:999999999.999'],
+            'initial_stock' => ['required', 'integer', 'min:0', 'max:999999999'],
             'unit' => ['required', Rule::enum(ProductUnit::class)],
-            'reorder_level' => ['nullable', 'numeric', 'min:0', 'max:999999999.999'],
+            'reorder_level' => ['nullable', 'integer', 'min:0', 'max:999999999'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ];
     }
@@ -180,11 +180,14 @@ class Edit extends Component
 
     public function render()
     {
-        return view('livewire.user.product.create', [
+        return view('livewire.user.product.edit', [
             'isEditing' => true,
             'existingImageUrl' => $this->product->image
                 ? asset('storage/'.ltrim($this->product->image, '/'))
                 : null,
+            'existingSkus' => Product::query()
+                ->where('id', '!=', $this->product->id)
+                ->pluck('sku'),
             'categories' => Category::query()
                 ->where(fn ($query) => $query->where('status', 'active')->orWhere('id', $this->product->category_id))
                 ->orderBy('name')
