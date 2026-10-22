@@ -50,6 +50,8 @@ class PurchaseOrderCreateTest extends TestCase
         $purchaseOrder = PurchaseOrder::with('items.product')->sole();
 
         $this->assertSame('ordered', $purchaseOrder->status);
+        $this->assertSame('P'.str_pad((string) $purchaseOrder->id, 6, '0', STR_PAD_LEFT), $purchaseOrder->reference);
+        $this->assertMatchesRegularExpression('/^P\d{6,}$/', $purchaseOrder->reference);
         $this->assertSame('partial', $purchaseOrder->payment_status);
         $this->assertSame('gcash', $purchaseOrder->payment_method);
         $this->assertSame('2026-10-22', $purchaseOrder->payment_date->toDateString());

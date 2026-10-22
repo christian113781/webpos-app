@@ -105,7 +105,7 @@
                         <option value="paid">Paid</option>
                     </x-ui.select>
                     <x-ui.select label="Payment method" wire:model="paymentMethod">
-                        <option value="">Select payment method</option>
+                        <option value="">Select</option>
                         <option value="cash">Cash</option>
                         <option value="gcash">GCash</option>
                         <option value="bank_transfer">Bank transfer</option>

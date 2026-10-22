@@ -26,7 +26,7 @@ class Create extends Component
 
     public string $paymentStatus = 'unpaid';
 
-    public string $paymentMethod = '';
+    public string $paymentMethod = 'cash';
 
     public string $paymentDate = '';
 
@@ -43,6 +43,7 @@ class Create extends Component
     public function mount(): void
     {
         $this->transactionDate = now()->toDateString();
+        $this->paymentDate = now()->toDateString();
     }
 
     protected function rules(): array
@@ -181,11 +182,9 @@ class Create extends Component
                 ]);
             }
 
-            $reference = 'PO-'.now()->format('Ymd').'-'.Str::upper(Str::random(10));
-
             $purchaseOrder = PurchaseOrder::create([
                 'supplier_id' => $supplier->id,
-                'reference' => $reference,
+                'reference' => 'PENDING-'.Str::uuid(),
                 'order_date' => $validated['transactionDate'],
                 'status' => $status,
                 'payment_status' => $validated['paymentStatus'],
@@ -196,6 +195,9 @@ class Create extends Component
                 'total' => $total,
                 'notes' => $validated['notes'] ?: null,
             ]);
+
+            $reference = 'P'.str_pad((string) $purchaseOrder->id, 6, '0', STR_PAD_LEFT);
+            $purchaseOrder->update(['reference' => $reference]);
 
             $purchaseOrder->items()->createMany($lineData);
 

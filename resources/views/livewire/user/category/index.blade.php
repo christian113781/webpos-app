@@ -122,14 +122,22 @@
         @endif
     </x-ui.card>
 
-    <x-ui.modal name="category-form" :title="$categoryId ? 'Edit category' : 'Add category'" subtitle="Enter the category details." mobile-full-width>
+    <x-ui.modal
+        name="category-form"
+        mobile-full-width
+        :aria-label="$categoryId ? 'Edit category' : 'Add category'"
+    >
         <div class="space-y-4">
+            <div>
+                <h2 class="text-base font-bold text-gray-900">{{ $categoryId ? 'Edit category' : 'Add category' }}</h2>
+                <p class="text-sm text-gray-500 mt-1">Enter the category details.</p>
+            </div>
             <x-ui.input label="Category name" wire:model="name" placeholder="e.g. Beverages" required />
+            <div class="flex justify-end gap-3 pt-2">
+                <x-ui.button variant="secondary" x-on:click="$dispatch('close-modal', { name: 'category-form' })">Cancel</x-ui.button>
+                <x-ui.button wire:click="save" target="save">{{ $categoryId ? 'Save changes' : 'Save' }}</x-ui.button>
+            </div>
         </div>
-        <x-slot:footer>
-            <x-ui.button variant="secondary" x-on:click="$dispatch('close-modal', { name: 'category-form' })">Cancel</x-ui.button>
-            <x-ui.button wire:click="save" target="save">{{ $categoryId ? 'Save changes' : 'Create category' }}</x-ui.button>
-        </x-slot:footer>
     </x-ui.modal>
 
     <x-ui.confirm-modal

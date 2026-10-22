@@ -26,6 +26,10 @@ class CategoryManagementTest extends TestCase
             ->assertSee('aria-label="Edit Beverages"', false)
             ->assertSee('aria-label="Delete Beverages"', false)
             ->assertSee('ui-modal-panel--full-mobile', false)
+            ->assertSee('aria-label="Add category"', false)
+            ->assertSee('>Add category</h2>', false)
+            ->assertDontSee('Fields marked * are required')
+            ->assertDontSee('border-t border-gray-100 sticky bottom-0 bg-white rounded-b-xl', false)
             ->assertDontSee('wire:model="status"', false)
             ->assertDontSee('Contact person')
             ->assertDontSee('Phone');

@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class PurchaseOrderCreatePageTest extends TestCase
@@ -66,5 +67,13 @@ class PurchaseOrderCreatePageTest extends TestCase
                 'Add new line',
                 'Order summary',
             ]);
+    }
+
+    public function test_payment_method_and_date_default_to_cash_and_today(): void
+    {
+        Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
+            ->test(\App\Livewire\User\PurchaseOrder\Create::class)
+            ->assertSet('paymentMethod', 'cash')
+            ->assertSet('paymentDate', now()->toDateString());
     }
 }
