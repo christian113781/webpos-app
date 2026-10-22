@@ -26,7 +26,6 @@
       @keydown.escape.window="menu = false"
       @resize.window.debounce.100ms="if (innerWidth >= 768) menu = false"
       @scroll.window.passive="sticky = scrollY > 640">
-<a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-[9999] focus:rounded-lg focus:bg-brand-600 focus:px-4 focus:py-2 focus:font-semibold focus:text-white">Skip to content</a>
 
 <!-- ───────── NAV ───────── -->
 <header class="sticky top-0 z-40 bg-white/85 backdrop-blur border-b border-brand-100">

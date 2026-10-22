@@ -7,14 +7,6 @@
 html { scroll-behavior: smooth; height: 100%; }
 body { font-family: 'Poppins', sans-serif; background: #f5faf7; overflow-x: hidden; min-height: 100%; }
 
-/* ── skip link ──────────────────────────────── */
-.skip-link {
-  position: absolute; inset-inline-start: 1rem; inset-block-start: -4rem;
-  background: #12804f; color: #fff; padding: .5rem 1rem;
-  border-radius: .5rem; font-weight: 600; z-index: 9999;
-  transition: inset-block-start .15s; text-decoration: none;
-}
-.skip-link:focus { inset-block-start: 1rem; }
 :focus-visible { outline: 2px solid #1b9a62; outline-offset: 2px; border-radius: 4px; }
 
 /* ── sidebar ─────────────────────────────────── */

@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Add Product — TalipapaPOS</title>
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Shared dashboard logic (sidebar, toast, notifications, modal plumbing) -->
+  <script src="assets/js/main.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { poppins: ['Poppins', 'sans-serif'] },
+          colors: {
+            brand: {
+              50:  '#effaf4', 100: '#d7f3e3', 200: '#b0e6c9',
+              400: '#3fbf84', 500: '#1b9a62', 600: '#12804f',
+              700: '#0e6a42', 900: '#0b2e22',
+            },
+          },
+          boxShadow: {
+            card: '0 1px 4px 0 rgba(27,154,98,.08), 0 4px 16px 0 rgba(27,154,98,.06)',
+          },
+        }
+      }
+    }
+  </script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="font-poppins text-gray-800 antialiased" x-data="createProductPage()" x-cloak>
+<!-- ════ MOBILE OVERLAY ════ -->
+<div id="sidebar-overlay"
+     class="fixed inset-0 bg-gray-900/50 z-20 lg:hidden"
+     aria-hidden="true"
+     x-show="mobileOpen"
+     x-transition.opacity
+     @click="closeMobileSidebar()"
+     style="display:none"></div>
+
+<!-- ════ TOAST ════ -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true" :class="{ show: toast.show }">
+  <svg class="w-4 h-4 text-brand-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+  </svg>
+  <span x-text="toast.msg">Done</span>
+</div>
+<!-- ════════════════════════════════════════════════
+     LAYOUT SHELL
+════════════════════════════════════════════════ -->
+<div class="flex min-h-[100dvh]">
+
+  <!-- ════════════════════════════════════════════
+       SIDEBAR SECTION (shared markup + shared data
+       from main.js: navSections, sidebarCollapsed, mobileOpen)
+  ════════════════════════════════════════════════ -->
+  <aside id="sidebar"
+         aria-label="Primary navigation"
+         class="bg-white flex flex-col shadow-card flex-shrink-0 relative z-30"
+         :class="{ collapsed: sidebarCollapsed, 'mobile-open': mobileOpen }">
+
+    <div class="logo-wrap flex items-center gap-3 px-6 py-4 min-h-[77px] border-b border-gray-100 flex-shrink-0">
+      <a href="dashboard.html" class="flex items-center min-w-0" aria-label="TalipapaPOS — go to dashboard">
+        <img src="assets/img/logo.png" alt="TalipapaPOS" class="logo-full h-7 w-auto max-w-full" width="150" height="28">
+        <img src="assets/img/favicon.png" alt="TalipapaPOS" class="logo-mark w-9 h-9" width="36" height="36">
+      </a>
+    </div>
+
+    <nav class="flex-1 sidebar-scroll py-3 px-2" aria-label="Primary">
+      <template x-for="section in navSections" :key="section.label">
+        <div>
+          <!-- plain section: small heading + icon links -->
+          <p x-show="!section.collapsible" class="nav-section-label px-3 mb-2 mt-4 first:mt-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wider" x-text="section.label"></p>
+          <ul class="space-y-0.5" role="list" x-show="!section.collapsible">
+            <template x-for="item in (section.collapsible ? [] : section.items)" :key="item.name">
+              <li>
+                <a :href="item.href" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-700 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                   :aria-current="item.active ? 'page' : null" :title="item.name">
+                  <svg class="w-5 h-5 flex-shrink-0" :class="item.active ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon"/>
+                  </svg>
+                  <span class="nav-label" x-text="item.name"></span>
+                </a>
+              </li>
+            </template>
+          </ul>
+
+          <!-- dropdown group: icon + label + chevron, then text-only links -->
+          <div x-show="section.collapsible" style="display:none">
+            <button type="button"
+                    class="nav-link w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                    :class="section.items.some(i => i.active) ? 'text-brand-700 font-semibold' : 'text-gray-700'"
+                    @click="onGroupClick(section)" :aria-expanded="String(!!section.open)" :aria-controls="'nav-group-' + section.label.toLowerCase()" :title="section.label">
+              <svg class="w-5 h-5 flex-shrink-0" :class="section.items.some(i => i.active) ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="section.icon"/>
+              </svg>
+              <span class="nav-label flex-1 text-start" x-text="section.label"></span>
+              <svg class="nav-label w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200" :class="section.open ? '' : 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+            </button>
+            <ul class="nav-sub mt-0.5 space-y-0.5" role="list" :id="'nav-group-' + section.label.toLowerCase()" x-show="section.open" x-transition.opacity.duration.150ms>
+              <template x-for="item in (section.collapsible ? section.items : [])" :key="item.name">
+                <li>
+                  <a :href="item.href" class="nav-link flex items-center ps-11 pe-3 py-2 rounded-xl text-sm text-gray-600 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                     :aria-current="item.active ? 'page' : null">
+                    <span class="nav-label" x-text="item.name"></span>
+                  </a>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </template>
+    </nav>
+
+    <div class="border-t border-gray-100 px-3 py-4 flex-shrink-0">
+      <div class="user-wrap flex items-center gap-3">
+        <div class="user-avatar w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center flex-shrink-0 text-white text-xs font-bold" aria-hidden="true">MS</div>
+        <div class="user-info min-w-0">
+          <p class="text-sm font-semibold text-gray-800 truncate">Maria Santos</p>
+          <p class="text-[11px] text-gray-400 truncate">Store Manager</p>
+        </div>
+        <button type="button" onclick="location.href='login.html'" class="user-info ms-auto p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" aria-label="Sign out">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN COLUMN (header + page main, side by side with sidebar) ══ -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- ════════════════════════════════════════════
+         HEADER SECTION (shared markup + shared data
+         from main.js: toast, notifications, profile menu)
+    ════════════════════════════════════════════════ -->
+    <header class="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
+      <div class="flex items-center gap-3 px-4 sm:px-6 py-3.5">
+        <button id="collapse-btn"
+                class="hidden lg:flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-brand-600 transition-colors flex-shrink-0"
+                :class="{ 'is-collapsed': sidebarCollapsed }"
+                @click="toggleSidebar()"
+                :aria-expanded="(!sidebarCollapsed).toString()" aria-controls="sidebar"
+                :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v18"/>
+          </svg>
+        </button>
+        <button id="menu-btn"
+                class="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                @click="mobileOpen ? closeMobileSidebar() : openMobileSidebar()"
+                :aria-expanded="mobileOpen.toString()" aria-controls="sidebar"
+                :aria-label="mobileOpen ? 'Close navigation menu' : 'Open navigation menu'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <div class="flex-1 max-w-md">
+          <div class="relative">
+            <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+            <input id="global-search" type="search" placeholder="Search products, customers…"
+                   class="w-full ps-9 pe-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:bg-white focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition-colors min-h-[2.75rem]">
+          </div>
+        </div>
+        <div class="flex items-center gap-2 ms-auto">
+                    <div class="relative">
+            <button @click="notifOpen = !notifOpen"
+                    class="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                    :aria-label="'Notifications' + (unreadCount ? ' (' + unreadCount + ' unread)' : '')"
+                    aria-haspopup="true" :aria-expanded="notifOpen.toString()" aria-controls="notif-panel">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              <span class="absolute top-1.5 end-1.5 w-2 h-2 rounded-full bg-red-500" aria-hidden="true" x-show="unreadCount > 0"></span>
+            </button>
+
+            <div id="notif-panel" role="menu" aria-label="Notifications"
+                 x-show="notifOpen" x-transition
+                 @click.outside="notifOpen = false" @keydown.escape="notifOpen = false"
+                 class="fixed inset-x-3 top-[4.5rem] sm:absolute sm:inset-x-auto sm:end-0 sm:top-full sm:mt-2 sm:w-96 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <h2 class="text-sm font-bold text-gray-900">Notifications</h2>
+                <button @click="markAllRead()" x-show="unreadCount > 0"
+                        class="text-xs font-semibold text-brand-600 hover:text-brand-700">Mark all as read</button>
+              </div>
+              <ul class="max-h-[min(20rem,calc(100dvh-13rem))] overflow-y-auto overscroll-contain divide-y divide-gray-50" role="list">
+                <template x-for="n in notifications" :key="n.id">
+                  <li>
+                    <button @click="markRead(n)" class="w-full flex items-start gap-3 px-4 py-3 text-start hover:bg-gray-50/60 transition-colors" :class="{ 'bg-brand-50/40': !n.read }">
+                      <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" :class="n.iconBg" aria-hidden="true">
+                        <svg class="w-4 h-4" :class="n.iconColor" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="n.icon"/></svg>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-sm font-medium text-gray-800 truncate" x-text="n.title"></p>
+                        <p class="text-xs text-gray-500 mt-0.5" x-text="n.message"></p>
+                        <p class="text-[11px] text-gray-400 mt-1" x-text="n.time"></p>
+                      </div>
+                      <span class="w-2 h-2 rounded-full bg-brand-500 flex-shrink-0 mt-1.5" aria-hidden="true" x-show="!n.read"></span>
+                    </button>
+                  </li>
+                </template>
+                <li x-show="notifications.length === 0">
+                  <p class="px-4 py-8 text-center text-sm text-gray-400">You're all caught up.</p>
+                </li>
+              </ul>
+              <div class="px-4 py-3 border-t border-gray-100 text-center">
+                <a href="#" @click.prevent="notifOpen = false" class="text-xs font-semibold text-brand-600 hover:text-brand-700">View all notifications</a>
+              </div>
+            </div>
+          </div>
+          <div class="relative">
+            <button @click="profileOpen = !profileOpen"
+                    class="flex items-center gap-2 p-1 pe-2 rounded-full hover:bg-gray-100 transition-colors"
+                    aria-haspopup="true" :aria-expanded="profileOpen.toString()" aria-controls="profile-panel"
+                    aria-label="Account menu for Maria Santos">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0" aria-hidden="true">MS</div>
+              <svg class="w-3.5 h-3.5 text-gray-400 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+
+            <div id="profile-panel" role="menu" aria-label="Account menu"
+                 x-show="profileOpen" x-transition
+                 @click.outside="profileOpen = false" @keydown.escape="profileOpen = false"
+                 class="absolute end-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0" aria-hidden="true">MS</div>
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-gray-900 truncate">Maria Santos</p>
+                  <p class="text-xs text-gray-400 truncate">juan.delacruz@stockmaster.ph</p>
+                </div>
+              </div>
+              <ul class="py-1.5" role="list">
+                <li>
+                  <a href="profile.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                    My Profile
+                  </a>
+                </li>
+                <li>
+                  <a href="settings.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg>
+                    Account Settings
+                  </a>
+                </li>
+                <li>
+                  <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Help &amp; Support
+                  </a>
+                </li>
+              </ul>
+              <div class="border-t border-gray-100 py-1.5">
+                <button role="menuitem" type="button" onclick="location.href='login.html'" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main id="main" tabindex="-1" class="flex-1 px-4 sm:px-6 py-6 max-w-[1200px] mx-auto w-full">
+
+      <!-- Breadcrumb + title -->
+      <nav aria-label="Breadcrumb" class="text-xs text-gray-400 mb-2">
+        <a href="product.html" class="hover:text-brand-600">Products</a>
+        <span class="mx-1">/</span>
+        <span class="text-gray-600 font-medium">Add product</span>
+      </nav>
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div class="min-w-0">
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">Add New Product</h1>
+          <p class="text-sm text-gray-500 mt-0.5">Fill in the details below to add a product to your inventory.</p>
+        </div>
+      </div>
+
+      <form @submit.prevent="submitForm()" novalidate>
+<div class="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-6 items-start">
+<div class="space-y-6 min-w-0 order-2 lg:order-1">
+
+        <!-- 1. CLASSIFICATION -->
+        <section class="bg-white rounded-2xl shadow-card p-5 sm:p-6" aria-labelledby="sec-class">
+          <h2 id="sec-class" class="text-sm font-bold text-gray-900 flex items-center gap-2">
+            Category &amp; Supplier
+          </h2>
+          <p class="text-xs text-gray-400 mt-0.5 mb-4">Choose where this product belongs and who supplies it.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="relative" @click.outside="closeCombo('category')">
+              <label id="lbl-category" for="p-category" class="block text-xs font-semibold text-gray-600 mb-1.5">Category <span aria-hidden="true" class="text-red-500">*</span></label>
+              <button id="p-category" type="button" x-ref="btn_category" role="combobox" aria-haspopup="listbox" :aria-expanded="cb.category.open.toString()" aria-controls="panel-category"
+                      @click="cb.category.open ? closeCombo('category') : openCombo('category')"
+                      class="field flex items-center justify-between gap-2 text-start" :class="{ error: errors.category }">
+                <span class="truncate" :class="form.category ? 'text-gray-800' : 'text-gray-400'" x-text="form.category || 'Select category'"></span>
+                <svg class="w-4 h-4 text-gray-400 flex-shrink-0 transition-transform" :class="{ 'rotate-180': cb.category.open }" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+              </button>
+              <p class="mt-1 text-xs text-red-500" role="alert" x-show="errors.category">Select a category.</p>
+
+              <!-- mobile backdrop -->
+              <div class="sm:hidden fixed inset-0 z-40 bg-gray-900/40" x-show="cb.category.open" x-cloak style="display:none" x-transition.opacity @click="closeCombo('category')"></div>
+
+              <div id="panel-category" x-show="cb.category.open" x-cloak style="display:none" x-transition.opacity.duration.120ms
+                   class="fixed inset-x-0 bottom-0 z-50 max-h-[80dvh] rounded-t-2xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-1 sm:w-full sm:max-h-none sm:rounded-xl bg-white border border-gray-200 shadow-xl flex flex-col overflow-hidden">
+
+                <!-- LIST MODE -->
+                <template x-if="cb.category.mode === 'list'">
+                  <div class="flex flex-col min-h-0">
+                    <div class="p-2.5 border-b border-gray-100">
+                      <div class="relative">
+                        <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+                        <input type="search" x-ref="search_category" class="field ps-9" style="font-size:16px" placeholder="Search category…" autocomplete="off" aria-label="Search category"
+                               x-model="cb.category.q" @input="cb.category.idx = 0"
+                               @keydown.arrow-down.prevent="moveCombo('category', 1)" @keydown.arrow-up.prevent="moveCombo('category', -1)"
+                               @keydown.enter.prevent="enterCombo('category')" @keydown.escape.prevent="closeCombo('category', true)">
+                      </div>
+                    </div>
+                    <ul id="list-category" role="listbox" aria-labelledby="lbl-category" class="overflow-y-auto overscroll-contain max-h-60 sm:max-h-56 py-1">
+                      <template x-for="(o, i) in comboOptions('category')" :key="o.v">
+                        <li role="option" :aria-selected="(form.category === o.v).toString()">
+                          <button type="button" @click="pickCombo('category', o.v)" @mouseenter="cb.category.idx = i"
+                                  class="w-full flex items-center gap-3 text-start px-3 py-2" :class="cb.category.idx === i ? 'bg-brand-50' : ''">
+                            <span class="w-2.5 h-2.5 rounded-full flex-shrink-0 ms-1" :style="{ background: tint(o.v) }"></span>
+                            <span class="min-w-0 flex-1">
+                              <span class="block text-sm text-gray-800 truncate" :class="form.category === o.v ? 'font-semibold text-brand-700' : ''" x-text="o.v"></span>
+                              
+                            </span>
+                            <svg x-show="form.category === o.v" class="w-4 h-4 text-brand-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                          </button>
+                        </li>
+                      </template>
+                      <li x-show="!comboOptions('category').length" class="px-4 py-5 text-center text-sm text-gray-400">No category found.</li>
+                    </ul>
+                    <div class="border-t border-gray-100 p-1.5 bg-white">
+                      <button type="button" @click="footerAdd('category')" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold text-brand-700 hover:bg-brand-50 text-start">
+                        <span class="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"/></svg></span>
+                        <span class="truncate" x-text="cb.category.q.trim() && !comboHasExact('category') ? 'Add &quot;' + cb.category.q.trim() + '&quot;' : 'Add new category'"></span>
+                      </button>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- ADD MODE (inline mini form, no modal) -->
+                <template x-if="cb.category.mode === 'add'">
+                  <form class="p-3 space-y-3" @submit.prevent="saveAdd('category')" novalidate @keydown.escape.prevent="cb.category.mode = 'list'">
+                    <div class="flex items-center gap-2">
+                      <button type="button" @click="cb.category.mode = 'list'; $nextTick(() => $refs.search_category && $refs.search_category.focus())" class="p-1.5 -ms-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Back to list">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+                      </button>
+                      <p class="text-sm font-bold text-gray-900">New category</p>
+                    </div>
+                    <div>
+                      <label for="add-category-name" class="block text-xs font-semibold text-gray-600 mb-1">Category Name <span aria-hidden="true" class="text-red-500">*</span></label>
+                      <input id="add-category-name" x-ref="addname_category" type="text" class="field" style="font-size:16px" :class="{ error: cb.category.err }" x-model.trim="addForm.name" autocomplete="off" placeholder="e.g. Frozen Goods" @keydown.enter.prevent="saveAdd('category')">
+                      <p class="mt-1 text-xs text-red-500" role="alert" x-show="cb.category.err" x-text="cb.category.err"></p>
+                    </div>
+                    
+                    <div class="flex gap-2 pt-1">
+                      <button type="button" @click="cb.category.mode = 'list'" class="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-500 border border-gray-200 hover:bg-gray-50 min-h-[44px]">Cancel</button>
+                      <button type="submit" class="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 min-h-[44px]">Add &amp; select</button>
+                    </div>
+                  </form>
+                </template>
+              </div>
+            </div>
+            <div class="relative" @click.outside="closeCombo('supplier')">
+              <label id="lbl-supplier" for="p-supplier" class="block text-xs font-semibold text-gray-600 mb-1.5">Supplier <span aria-hidden="true" class="text-red-500">*</span></label>
+              <button id="p-supplier" type="button" x-ref="btn_supplier" role="combobox" aria-haspopup="listbox" :aria-expanded="cb.supplier.open.toString()" aria-controls="panel-supplier"
+                      @click="cb.supplier.open ? closeCombo('supplier') : openCombo('supplier')"
+                      class="field flex items-center justify-between gap-2 text-start" :class="{ error: errors.supplier }">
+                <span class="truncate" :class="form.supplier ? 'text-gray-800' : 'text-gray-400'" x-text="form.supplier || 'Select supplier'"></span>
+                <svg class="w-4 h-4 text-gray-400 flex-shrink-0 transition-transform" :class="{ 'rotate-180': cb.supplier.open }" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+              </button>
+              <p class="mt-1 text-xs text-red-500" role="alert" x-show="errors.supplier">Select a supplier.</p>
+
+              <!-- mobile backdrop -->
+              <div class="sm:hidden fixed inset-0 z-40 bg-gray-900/40" x-show="cb.supplier.open" x-cloak style="display:none" x-transition.opacity @click="closeCombo('supplier')"></div>
+
+              <div id="panel-supplier" x-show="cb.supplier.open" x-cloak style="display:none" x-transition.opacity.duration.120ms
+                   class="fixed inset-x-0 bottom-0 z-50 max-h-[80dvh] rounded-t-2xl sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-full sm:mt-1 sm:w-full sm:max-h-none sm:rounded-xl bg-white border border-gray-200 shadow-xl flex flex-col overflow-hidden">
+
+                <!-- LIST MODE -->
+                <template x-if="cb.supplier.mode === 'list'">
+                  <div class="flex flex-col min-h-0">
+                    <div class="p-2.5 border-b border-gray-100">
+                      <div class="relative">
+                        <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
+                        <input type="search" x-ref="search_supplier" class="field ps-9" style="font-size:16px" placeholder="Search supplier…" autocomplete="off" aria-label="Search supplier"
+                               x-model="cb.supplier.q" @input="cb.supplier.idx = 0"
+                               @keydown.arrow-down.prevent="moveCombo('supplier', 1)" @keydown.arrow-up.prevent="moveCombo('supplier', -1)"
+                               @keydown.enter.prevent="enterCombo('supplier')" @keydown.escape.prevent="closeCombo('supplier', true)">
+                      </div>
+                    </div>
+                    <ul id="list-supplier" role="listbox" aria-labelledby="lbl-supplier" class="overflow-y-auto overscroll-contain max-h-60 sm:max-h-56 py-1">
+                      <template x-for="(o, i) in comboOptions('supplier')" :key="o.v">
+                        <li role="option" :aria-selected="(form.supplier === o.v).toString()">
+                          <button type="button" @click="pickCombo('supplier', o.v)" @mouseenter="cb.supplier.idx = i"
+                                  class="w-full flex items-center gap-3 text-start px-3 py-2" :class="cb.supplier.idx === i ? 'bg-brand-50' : ''">
+                            <span class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0" :style="{ background: tint(o.v) }" x-text="o.v.charAt(0).toUpperCase()"></span>
+                            <span class="min-w-0 flex-1">
+                              <span class="block text-sm text-gray-800 truncate" :class="form.supplier === o.v ? 'font-semibold text-brand-700' : ''" x-text="o.v"></span>
+                              <span class="block text-xs text-gray-400 truncate" x-show="o.sub" x-text="o.sub"></span>
+                            </span>
+                            <svg x-show="form.supplier === o.v" class="w-4 h-4 text-brand-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                          </button>
+                        </li>
+                      </template>
+                      <li x-show="!comboOptions('supplier').length" class="px-4 py-5 text-center text-sm text-gray-400">No supplier found.</li>
+                    </ul>
+                    <div class="border-t border-gray-100 p-1.5 bg-white">
+                      <button type="button" @click="footerAdd('supplier')" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-semibold text-brand-700 hover:bg-brand-50 text-start">
+                        <span class="w-6 h-6 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 4v16m8-8H4"/></svg></span>
+                        <span class="truncate" x-text="cb.supplier.q.trim() && !comboHasExact('supplier') ? 'Add &quot;' + cb.supplier.q.trim() + '&quot;' : 'Add new supplier'"></span>
+                      </button>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- ADD MODE (inline mini form, no modal) -->
+                <template x-if="cb.supplier.mode === 'add'">
+                  <form class="p-3 space-y-3" @submit.prevent="saveAdd('supplier')" novalidate @keydown.escape.prevent="cb.supplier.mode = 'list'">
+                    <div class="flex items-center gap-2">
+                      <button type="button" @click="cb.supplier.mode = 'list'; $nextTick(() => $refs.search_supplier && $refs.search_supplier.focus())" class="p-1.5 -ms-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Back to list">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>
+                      </button>
+                      <p class="text-sm font-bold text-gray-900">New supplier</p>
+                    </div>
+                    <div>
+                      <label for="add-supplier-name" class="block text-xs font-semibold text-gray-600 mb-1">Supplier Name <span aria-hidden="true" class="text-red-500">*</span></label>
+                      <input id="add-supplier-name" x-ref="addname_supplier" type="text" class="field" style="font-size:16px" :class="{ error: cb.supplier.err }" x-model.trim="addForm.name" autocomplete="off" placeholder="e.g. Metro Grocery Wholesale" @keydown.enter.prevent="saveAdd('supplier')">
+                      <p class="mt-1 text-xs text-red-500" role="alert" x-show="cb.supplier.err" x-text="cb.supplier.err"></p>
+                    </div>
+                    <div>
+                  <label for="add-supplier-phone" class="block text-xs font-semibold text-gray-600 mb-1">Phone <span class="text-gray-400 font-normal">(optional)</span></label>
+                  <input id="add-supplier-phone" type="tel" inputmode="tel" class="field" x-model.trim="addForm.phone" autocomplete="off" @keydown.enter.prevent="saveAdd('supplier')">
+                </div>
+                    <div class="flex gap-2 pt-1">
+                      <button type="button" @click="cb.supplier.mode = 'list'" class="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-gray-500 border border-gray-200 hover:bg-gray-50 min-h-[44px]">Cancel</button>
+                      <button type="submit" class="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 min-h-[44px]">Add &amp; select</button>
+                    </div>
+                  </form>
+                </template>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. PRODUCT INFO -->
+        <section class="bg-white rounded-2xl shadow-card p-5 sm:p-6" aria-labelledby="sec-info">
+          <h2 id="sec-info" class="text-sm font-bold text-gray-900 flex items-center gap-2">
+            Product Information
+          </h2>
+          <p class="text-xs text-gray-400 mt-0.5 mb-4">Name, codes and a short description.</p>
+          <div class="space-y-4">
+            <div class="space-y-4 min-w-0">
+              <div>
+                <label for="p-name" class="block text-xs font-semibold text-gray-600 mb-1.5">Product Name <span aria-hidden="true" class="text-red-500">*</span></label>
+                <input id="p-name" type="text" class="field" :class="{ error: errors.name }" x-model.trim="form.name" placeholder="e.g. Lucky Me Pancit Canton" autocomplete="off" required>
+                <p class="mt-1 text-xs text-red-500" role="alert" x-show="errors.name">Product name is required.</p>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label for="p-sku" class="block text-xs font-semibold text-gray-600 mb-1.5">SKU <span aria-hidden="true" class="text-red-500">*</span></label>
+                  <div class="flex gap-2">
+                    <input id="p-sku" type="text" class="field" :class="{ error: errors.sku }" x-model.trim="form.sku" placeholder="e.g. GRO-0001" required>
+                    <button type="button" @click="generateSku()" class="flex-shrink-0 px-3 rounded-xl text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 transition-colors" title="Generate SKU from category">Auto</button>
+                  </div>
+                  <p class="mt-1 text-xs text-red-500" role="alert" x-show="errors.sku" x-text="errors.sku === 2 ? 'This SKU already exists.' : 'SKU is required.'"></p>
+                </div>
+                <div>
+                  <label for="p-barcode" class="block text-xs font-semibold text-gray-600 mb-1.5">Barcode <span class="text-gray-400 font-normal">(optional)</span></label>
+                  <input id="p-barcode" type="text" inputmode="numeric" class="field" x-model.trim="form.barcode" placeholder="Scan or type barcode" autocomplete="off">
+                </div>
+              </div>
+              <div>
+                <label for="p-desc" class="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
+                <textarea id="p-desc" rows="3" class="field" x-model.trim="form.description" placeholder="Size, flavor, brand or any notes about this product"></textarea>
+              </div>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- 3. PRICING -->
+        <section class="bg-white rounded-2xl shadow-card p-5 sm:p-6" aria-labelledby="sec-price">
+          <h2 id="sec-price" class="text-sm font-bold text-gray-900 flex items-center gap-2">
+            Pricing
+          </h2>
+          <p class="text-xs text-gray-400 mt-0.5 mb-4">What you pay and what you sell it for.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+            <div>
+              <label for="p-cost" class="block text-xs font-semibold text-gray-600 mb-1.5">Cost Price (₱) <span aria-hidden="true" class="text-red-500">*</span></label>
+              <input id="p-cost" type="number" inputmode="decimal" min="0" step="0.01" class="field" :class="{ error: errors.cost }" x-model.number="form.cost" placeholder="0.00" required>
+              <p class="mt-1 text-xs text-red-500" role="alert" x-show="errors.cost">Cost price is required.</p>
+            </div>
+            <div>
+              <label for="p-price" class="block text-xs font-semibold text-gray-600 mb-1.5">Selling Price (₱) <span aria-hidden="true" class="text-red-500">*</span></label>
+              <input id="p-price" type="number" inputmode="decimal" min="0" step="0.01" class="field" :class="{ error: errors.price }" x-model.number="form.price" placeholder="0.00" required>
+              <p class="mt-1 text-xs text-red-500" role="alert" x-show="errors.price">Selling price is required.</p>
+            </div>
+            
+          </div>
+        </section>
+
+        <!-- 4. INVENTORY -->
+        <section class="bg-white rounded-2xl shadow-card p-5 sm:p-6" aria-labelledby="sec-stock">
+          <h2 id="sec-stock" class="text-sm font-bold text-gray-900 flex items-center gap-2">
+            Inventory
+          </h2>
+          <p class="text-xs text-gray-400 mt-0.5 mb-4">Stock on hand, how it is counted and when it needs restocking.</p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label for="p-qty" class="block text-xs font-semibold text-gray-600 mb-1.5">Stock Qty <span aria-hidden="true" class="text-red-500">*</span></label>
+              <input id="p-qty" type="number" inputmode="numeric" min="0" step="1" class="field" :class="{ error: errors.qty }" x-model.number="form.qty" placeholder="0" required>
+              <p class="mt-1 text-xs text-red-500" role="alert" x-show="errors.qty">Quantity is required.</p>
+            </div>
+            <div>
+              <label for="p-unit" class="block text-xs font-semibold text-gray-600 mb-1.5">Unit</label>
+              <select id="p-unit" class="field" x-model="form.unit"><template x-for="u in units" :key="u"><option x-text="u"></option></template></select>
+            </div>
+            <div>
+              <label for="p-reorder" class="block text-xs font-semibold text-gray-600 mb-1.5">Reorder Level</label>
+              <input id="p-reorder" type="number" inputmode="numeric" min="0" step="1" class="field" x-model.number="form.reorder" placeholder="20">
+            </div>
+            <div>
+              <label for="p-expiry" class="block text-xs font-semibold text-gray-600 mb-1.5">Expiration Date <span class="text-gray-400 font-normal">(if any)</span></label>
+              <input id="p-expiry" type="date" class="field" x-model="form.expiry">
+            </div>
+          </div>
+        
+          </section>
+</div>
+<!-- RIGHT: IMAGE -->
+<aside class="order-1 lg:order-2 lg:sticky lg:top-24">
+  <section class="bg-white rounded-2xl shadow-card p-5 sm:p-6 grid grid-cols-[auto_1fr] gap-x-4 content-start lg:block" aria-labelledby="sec-img">
+    <h2 id="sec-img" class="col-start-2 text-sm font-bold text-gray-900">Product Image <span class="text-gray-400 font-normal">(optional)</span></h2>
+    <p class="col-start-2 text-xs text-gray-400 mt-0.5 lg:mb-4">Add one clear photo of the product.</p>
+
+    <!-- click / drop zone (the whole box is the upload button) -->
+    <label for="p-image" tabindex="0" role="button" :aria-label="form.images.length ? 'Replace product image' : 'Upload product image'"
+           @keydown.enter.prevent="$refs.imgInput.click()" @keydown.space.prevent="$refs.imgInput.click()"
+           class="col-start-1 row-start-1 row-span-4 relative block w-28 h-28 sm:w-36 sm:h-36 lg:w-full lg:h-auto lg:aspect-square rounded-2xl border-2 border-dashed overflow-hidden cursor-pointer text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+           :class="dragging ? 'border-brand-500 bg-brand-50' : (form.images.length ? 'border-transparent bg-white ring-1 ring-gray-100' : 'border-gray-200 bg-gray-50 hover:border-brand-400 hover:bg-brand-50/40')"
+           @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="dragging = false; addFiles($event.dataTransfer.files)">
+      <template x-if="form.images.length">
+        <img :src="form.images[0]" alt="Product image preview" class="absolute inset-0 w-full h-full object-contain">
+      </template>
+      <div x-show="!form.images.length" class="absolute inset-0 flex flex-col items-center justify-center p-3 text-gray-400">
+        <svg class="w-8 h-8 lg:w-10 lg:h-10 mb-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4-4a3 3 0 014 0l4 4m-2-2l1-1a3 3 0 014 0l2 2M14 8h.01M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        <p class="text-sm font-semibold text-gray-600"><span class="lg:hidden text-xs">Tap to add</span><span class="hidden lg:inline">Click to upload or drag &amp; drop</span></p>
+        <p class="text-[11px] mt-1 hidden lg:block">You can also paste an image (Ctrl+V)</p>
+      </div>
+      <!-- remove (inside the image) -->
+      <button type="button" x-show="form.images.length" @click.prevent.stop="form.images = []; errors.image = ''"
+              class="absolute top-2 end-2 w-8 h-8 rounded-full bg-gray-900/70 text-white flex items-center justify-center hover:bg-red-500 transition-colors" aria-label="Remove image" title="Remove image">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+      <div x-show="busy" class="absolute inset-0 bg-white/70 flex items-center justify-center text-xs font-semibold text-brand-700">Processing…</div>
+    </label>
+    <input id="p-image" x-ref="imgInput" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="addFiles($event.target.files); $event.target.value = ''">
+    <p class="col-start-2 mt-2 lg:mt-3 text-xs text-red-500" role="alert" x-show="errors.image" x-text="errors.image"></p>
+    <p class="col-start-2 mt-2 lg:mt-3 text-[11px] text-gray-400 leading-relaxed">PNG, JPG or WebP · up to 5&nbsp;MB. Square photo on a plain background looks best.</p>
+  </section>
+  <div class="hidden lg:block mt-4"><div class="flex flex-col gap-2">
+  <button type="submit" class="w-full px-6 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px]">Save Product</button>
+  <button type="button" @click="submitForm(true)" class="w-full px-5 py-2.5 rounded-xl text-sm font-semibold text-brand-700 bg-white border border-brand-200 hover:bg-brand-50 transition-colors min-h-[44px]">Save &amp; add another</button>
+  <a href="product.html" class="w-full text-center px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors min-h-[44px] flex items-center justify-center">Cancel</a>
+</div></div>
+</aside>
+</div>
+
+        <!-- ACTIONS (mobile: bottom of form) -->
+<div class="lg:hidden mt-6"><div class="flex flex-col gap-2">
+  <button type="submit" class="w-full px-6 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px]">Save Product</button>
+  <button type="button" @click="submitForm(true)" class="w-full px-5 py-2.5 rounded-xl text-sm font-semibold text-brand-700 bg-white border border-brand-200 hover:bg-brand-50 transition-colors min-h-[44px]">Save &amp; add another</button>
+  <a href="product.html" class="w-full text-center px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors min-h-[44px] flex items-center justify-center">Cancel</a>
+</div></div>
+      </form>
+    </main>
+  </div>
+</div>
+
+
+
+<script>
+/* Create-product page. New products are saved to localStorage under 'pp-new-products'
+   (swap for your API later). product.html is untouched and still uses its modal. */
+function createProductPage() {
+  return {
+    ...sharedChrome('product.html'),
+
+    categories: ['Food & Pantry', 'Beverages', 'Snacks & Sweets', 'Personal Care', 'Household', 'Health & Pharmacy', 'School & Office', 'Electronics & Accessories', 'Hardware & Tools', 'Alcohol & Tobacco'],
+    maxImages: 1, maxMB: 5, dragging: false, busy: false,
+    units: ['pcs', 'pack', 'box', 'bottle', 'can', 'sachet', 'tube', 'kg', 'liter', 'set'],
+    suppliers: ppSuppliers.names(),
+    prefix: { 'Food & Pantry': 'GRO', 'Beverages': 'BEV', 'Snacks & Sweets': 'SNK', 'Personal Care': 'PC', 'Household': 'HH', 'Health & Pharmacy': 'HLT', 'School & Office': 'SCH', 'Electronics & Accessories': 'ELE', 'Hardware & Tools': 'HW', 'Alcohol & Tobacco': 'ALC' },
+
+
+    /* ── searchable category / supplier dropdowns (search + inline "Add new", no modal) ── */
+    cb: { category: { open: false, q: '', idx: 0, mode: 'list', err: '' }, supplier: { open: false, q: '', idx: 0, mode: 'list', err: '' } },
+    addForm: { name: '', phone: '' },
+    CAT_KEY: 'pp-custom-categories',
+    supplierRows: [],
+    loadSuppliers() {
+      this.supplierRows = ppSuppliers.load().filter(x => x.status === 'active').map(x => ({ v: x.name, sub: [x.contact, x.phone].filter(Boolean).join(' · ') }));
+      this.suppliers = this.supplierRows.map(x => x.v);
+    },
+    tint(name) { let h = 0; for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 360; return 'hsl(' + h + ' 45% 42%)'; },
+    comboList(k) { return k === 'category' ? this.categories.map(c => ({ v: c, sub: '' })) : this.supplierRows; },
+    comboOptions(k) { const q = this.cb[k].q.trim().toLowerCase(); return this.comboList(k).filter(o => !q || (o.v + ' ' + o.sub).toLowerCase().includes(q)); },
+    comboHasExact(k) { const q = this.cb[k].q.trim().toLowerCase(); return this.comboList(k).some(o => o.v.toLowerCase() === q); },
+    other(k) { return k === 'category' ? 'supplier' : 'category'; },
+    openCombo(k) {
+      this.closeCombo(this.other(k));
+      const c = this.cb[k]; c.q = ''; c.mode = 'list'; c.err = '';
+      c.idx = Math.max(0, this.comboList(k).findIndex(o => o.v === this.form[k]));
+      c.open = true;
+      this.$nextTick(() => this.$refs['search_' + k] && this.$refs['search_' + k].focus());
+    },
+    closeCombo(k, refocus) { const c = this.cb[k]; if (!c.open) return; c.open = false; c.mode = 'list'; if (refocus) this.$nextTick(() => this.$refs['btn_' + k].focus()); },
+    moveCombo(k, d) { const n = this.comboOptions(k).length; if (n) this.cb[k].idx = (this.cb[k].idx + d + n) % n; },
+    enterCombo(k) { const o = this.comboOptions(k)[this.cb[k].idx]; if (o) this.pickCombo(k, o.v); else this.footerAdd(k); },
+    pickCombo(k, v) { this.form[k] = v; if (this.errors[k]) this.errors[k] = 0; this.closeCombo(k, true); },
+
+    /* footer button: typed text -> add it; empty -> open the inline form */
+    footerAdd(k) {
+      const q = this.cb[k].q.trim();
+      if (q && !this.comboHasExact(k) && k === 'category') { this.addCategory(q); return; }
+      this.startAdd(k, q && !this.comboHasExact(k) ? q : '');
+    },
+    startAdd(k, name) {
+      this.addForm = { name: name || '', phone: '' }; this.cb[k].err = ''; this.cb[k].mode = 'add';
+      this.$nextTick(() => { const el = this.$refs['addname_' + k]; if (el) { el.focus(); el.select(); } });
+    },
+    saveAdd(k) {
+      const name = this.addForm.name.trim();
+      if (!name) { this.cb[k].err = 'Name is required.'; return; }
+      if (k === 'category') this.addCategory(name); else this.addSupplier(name, this.addForm.phone);
+    },
+    addCategory(name) {
+      const dup = this.categories.find(c => c.toLowerCase() === name.toLowerCase());
+      if (dup) { this.pickCombo('category', dup); this.showToast('"' + dup + '" already exists — selected it.'); return; }
+      try { const c = JSON.parse(localStorage.getItem(this.CAT_KEY)) || []; c.push(name); localStorage.setItem(this.CAT_KEY, JSON.stringify(c)); } catch (e) {}
+      this.categories.push(name); this.pickCombo('category', name); this.showToast('Category added and selected.');
+    },
+    addSupplier(name, phone) {
+      const dup = this.supplierRows.find(o => o.v.toLowerCase() === name.toLowerCase());
+      if (dup) { this.pickCombo('supplier', dup.v); this.showToast('"' + dup.v + '" already exists — selected it.'); return; }
+      const l = ppSuppliers.load();
+      l.unshift({ id: 'sup-' + Date.now(), name, contact: '', phone: phone || '', email: '', address: '', supplies: '', terms: '', status: 'active', notes: '', added: new Date().toISOString() });
+      ppSuppliers.save(l); this.loadSuppliers();
+      this.pickCombo('supplier', name); this.showToast('Supplier added and selected.');
+    },
+
+    KEY: 'pp-new-products',
+    stored() { try { const l = JSON.parse(localStorage.getItem(this.KEY)); return Array.isArray(l) ? l : []; } catch (e) { return []; } },
+
+    blank() { return { category: '', supplier: '', name: '', sku: '', barcode: '', cost: '', price: '', images: [], description: '', qty: '', unit: 'pcs', reorder: '', expiry: '' }; },
+    form: {}, errors: {},
+    init() {
+      try { (JSON.parse(localStorage.getItem(this.CAT_KEY)) || []).forEach(c => { if (!this.categories.includes(c)) this.categories.push(c); }); } catch (e) {}
+      this.loadSuppliers();
+      this.form = this.blank();
+      document.addEventListener('paste', e => {
+        const files = [...(e.clipboardData ? e.clipboardData.files : [])].filter(f => f.type.startsWith('image/'));
+        if (files.length) { e.preventDefault(); this.addFiles(files); }
+      });
+    },
+
+
+    generateSku() {
+      const p = this.prefix[this.form.category] || 'PRD';
+      const n = this.stored().filter(x => (x.sku || '').startsWith(p + '-')).length + 1;
+      this.form.sku = p + '-' + String(n).padStart(4, '0');
+    },
+
+    /* ── images: multi-upload, drag & drop, paste, camera; downscaled to keep storage small ── */
+    async addFiles(fileList) {
+      this.errors.image = '';
+      const files = [...fileList];
+      
+      if (!files.length) return;
+      this.busy = true;
+      const problems = [];
+      for (const f of files) {
+        if (!/^image\/(png|jpe?g|webp)$/i.test(f.type)) { problems.push(f.name + ' is not a PNG, JPG or WebP image.'); continue; }
+        if (f.size > this.maxMB * 1024 * 1024) { problems.push(f.name + ' is larger than ' + this.maxMB + ' MB.'); continue; }
+        try { this.form.images = [await this.shrink(f)]; problems.length = 0; break; } catch (e) { problems.push('Could not read ' + f.name + '.'); }
+      }
+      this.errors.image = problems.join(' ');
+      this.busy = false;
+    },
+    shrink(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file), img = new Image();
+        img.onload = () => {
+          const s = Math.min(1, 640 / Math.max(img.width, img.height));
+          const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+          const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+          URL.revokeObjectURL(url); resolve(c.toDataURL('image/jpeg', 0.85));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(); };
+        img.src = url;
+      });
+    },
+    makeMain(i) { if (i > 0) this.form.images.unshift(this.form.images.splice(i, 1)[0]); },
+    removeImage(i) { this.form.images.splice(i, 1); this.errors.image = ''; },
+
+    validate() {
+      const f = this.form, e = {};
+      if (!f.category) e.category = 1;
+      if (!f.supplier) e.supplier = 1;
+      if (!f.name) e.name = 1;
+      if (!f.sku) e.sku = 1;
+      else if (this.stored().some(x => x.sku.toLowerCase() === f.sku.toLowerCase())) e.sku = 2;
+      if (f.cost === '' || f.cost == null) e.cost = 1;
+      if (f.price === '' || f.price == null) e.price = 1;
+      if (f.qty === '' || f.qty == null) e.qty = 1;
+      this.errors = { ...e, image: this.errors.image || '' };
+      return Object.keys(e).length === 0;
+    },
+
+    submitForm(another) {
+      if (!this.validate()) {
+        this.$nextTick(() => { const el = document.querySelector('.field.error'); if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); } });
+        return;
+      }
+      const f = this.form;
+      const rec = {
+        id: Date.now(), name: f.name, brand: f.name, generic: f.description || '', description: f.description || '',
+        category: f.category, supplier: f.supplier, sku: f.sku, barcode: f.barcode || '', image: f.images[0] || '', images: f.images.slice(),
+        cost: Number(f.cost), price: Number(f.price), stock: Number(f.qty), unit: f.unit,
+        reorder: Number(f.reorder) || 20, expiry: f.expiry || '', strength: '', form: 'Piece', batch: '', rx: false,
+      };
+      const list = this.stored(); list.unshift(rec);
+      try { localStorage.setItem(this.KEY, JSON.stringify(list)); }
+      catch (err) { this.showToast('Could not save — storage is full. Try a smaller image.'); return; }
+      if (another) { this.form = this.blank(); this.errors = {}; this.showToast('Product added. Add the next one.'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      else { this.showToast('Product added successfully!'); setTimeout(() => { location.href = 'product.html'; }, 700); }
+    },
+  };
+}
+</script>
+</body>
+</html>

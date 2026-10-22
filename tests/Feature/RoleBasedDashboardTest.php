@@ -35,7 +35,13 @@ class RoleBasedDashboardTest extends TestCase
         $this->actingAs($user)
             ->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('User dashboard');
+            ->assertSee('User dashboard')
+            ->assertSee('Primary navigation')
+            ->assertSee('global-search', false)
+            ->assertSee('nav-sub-link', false)
+            ->assertSee('Low stock alert')
+            ->assertSee('Prawn Crackers 60g has only 8 packs left.')
+            ->assertSee('action="' . route('logout') . '"', false);
     }
 
     public function test_users_cannot_access_the_other_role_dashboard(): void
@@ -50,6 +56,53 @@ class RoleBasedDashboardTest extends TestCase
         $this->actingAs($admin)
             ->get(route('dashboard'))
             ->assertForbidden();
+    }
+
+    public function test_user_sidebar_links_to_user_routes_and_marks_the_current_page_active(): void
+    {
+        $user = User::factory()->create(['system_role' => 'user']);
+
+        $this->actingAs($user)
+            ->get(route('user.products'))
+            ->assertOk()
+            ->assertSee(str_replace('/', '\/', route('user.products')), false)
+            ->assertSee(str_replace('/', '\/', route('user.suppliers')), false)
+            ->assertSee(str_replace('/', '\/', route('user.purchase-orders')), false)
+            ->assertSee("name: 'Products', href: '" . str_replace('/', '\/', route('user.products')) . "', active: true", false);
+    }
+
+    public function test_user_supplier_page_renders_the_empty_supplier_design(): void
+    {
+        $user = User::factory()->create(['system_role' => 'user']);
+
+        $this->actingAs($user)
+            ->get(route('user.suppliers'))
+            ->assertOk()
+            ->assertSee('Suppliers')
+            ->assertSee('0 active · 0 total')
+            ->assertSee('Supplier summary')
+            ->assertSee('Search suppliers')
+            ->assertSee('Filter by status')
+            ->assertSee('Sort suppliers')
+            ->assertSee('No suppliers yet')
+            ->assertSee('Add the companies you buy stock from so they show up when you add products.')
+            ->assertSee('Add supplier')
+            ->assertSee(route('user.suppliers.create'), false);
+    }
+
+    public function test_user_can_open_the_add_supplier_page(): void
+    {
+        $user = User::factory()->create(['system_role' => 'user']);
+
+        $this->actingAs($user)
+            ->get(route('user.suppliers.create'))
+            ->assertOk()
+            ->assertSee('Add supplier')
+            ->assertSee('Supplier information')
+            ->assertSee('Supplier name')
+            ->assertSee('Contact person')
+            ->assertSee('novalidate', false)
+            ->assertSee(route('user.suppliers'), false);
     }
 
     public function test_login_redirects_to_the_admin_dashboard(): void

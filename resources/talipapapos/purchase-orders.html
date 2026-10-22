@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Purchase Orders — TalipapaPOS</title>
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Shared dashboard logic (sidebar, toast, notifications, modal plumbing) -->
+  <script src="assets/js/main.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { poppins: ['Poppins', 'sans-serif'] },
+          colors: {
+            brand: {
+              50:  '#effaf4', 100: '#d7f3e3', 200: '#b0e6c9',
+              400: '#3fbf84', 500: '#1b9a62', 600: '#12804f',
+              700: '#0e6a42', 900: '#0b2e22',
+            },
+          },
+          boxShadow: {
+            card: '0 1px 4px 0 rgba(27,154,98,.08), 0 4px 16px 0 rgba(27,154,98,.06)',
+          },
+        }
+      }
+    }
+  </script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    /* Phones: the confirm dialog is a full-width bottom sheet (same style as the POS checkout). Other sizes unchanged. */
+    @media (max-width: 639px) {
+      #delete-backdrop { padding: 0; align-items: flex-end; }
+      #delete-backdrop > div {
+        max-width: none; max-height: 92dvh; overflow-y: auto;
+        border-radius: 1.5rem 1.5rem 0 0;
+        padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+      }
+    }
+  </style>
+</head>
+<body class="font-poppins text-gray-800 antialiased" x-data="purchaseOrdersPage()" x-cloak>
+<!-- ════ MOBILE OVERLAY ════ -->
+<div id="sidebar-overlay"
+     class="fixed inset-0 bg-gray-900/50 z-20 lg:hidden"
+     aria-hidden="true"
+     x-show="mobileOpen"
+     x-transition.opacity
+     @click="closeMobileSidebar()"
+     style="display:none"></div>
+
+<!-- ════ TOAST ════ -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true" :class="{ show: toast.show }">
+  <svg class="w-4 h-4 text-brand-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+  </svg>
+  <span x-text="toast.msg">Done</span>
+</div>
+<!-- ════════════════════════════════════════════════
+     LAYOUT SHELL
+════════════════════════════════════════════════ -->
+<div class="flex min-h-[100dvh]">
+
+  <!-- ════════════════════════════════════════════
+       SIDEBAR SECTION (shared markup + shared data
+       from main.js: navSections, sidebarCollapsed, mobileOpen)
+  ════════════════════════════════════════════════ -->
+  <aside id="sidebar"
+         aria-label="Primary navigation"
+         class="bg-white flex flex-col shadow-card flex-shrink-0 relative z-30"
+         :class="{ collapsed: sidebarCollapsed, 'mobile-open': mobileOpen }">
+
+    <div class="logo-wrap flex items-center gap-3 px-6 py-4 min-h-[77px] border-b border-gray-100 flex-shrink-0">
+      <a href="dashboard.html" class="flex items-center min-w-0" aria-label="TalipapaPOS — go to dashboard">
+        <img src="assets/img/logo.png" alt="TalipapaPOS" class="logo-full h-7 w-auto max-w-full" width="150" height="28">
+        <img src="assets/img/favicon.png" alt="TalipapaPOS" class="logo-mark w-9 h-9" width="36" height="36">
+      </a>
+    </div>
+
+    <nav class="flex-1 sidebar-scroll py-3 px-2" aria-label="Primary">
+      <template x-for="section in navSections" :key="section.label">
+        <div>
+          <!-- plain section: small heading + icon links -->
+          <p x-show="!section.collapsible" class="nav-section-label px-3 mb-2 mt-4 first:mt-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wider" x-text="section.label"></p>
+          <ul class="space-y-0.5" role="list" x-show="!section.collapsible">
+            <template x-for="item in (section.collapsible ? [] : section.items)" :key="item.name">
+              <li>
+                <a :href="item.href" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-700 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                   :aria-current="item.active ? 'page' : null" :title="item.name">
+                  <svg class="w-5 h-5 flex-shrink-0" :class="item.active ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon"/>
+                  </svg>
+                  <span class="nav-label" x-text="item.name"></span>
+                </a>
+              </li>
+            </template>
+          </ul>
+
+          <!-- dropdown group: icon + label + chevron, then text-only links -->
+          <div x-show="section.collapsible" style="display:none">
+            <button type="button"
+                    class="nav-link w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                    :class="section.items.some(i => i.active) ? 'text-brand-700 font-semibold' : 'text-gray-700'"
+                    @click="onGroupClick(section)" :aria-expanded="String(!!section.open)" :aria-controls="'nav-group-' + section.label.toLowerCase()" :title="section.label">
+              <svg class="w-5 h-5 flex-shrink-0" :class="section.items.some(i => i.active) ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="section.icon"/>
+              </svg>
+              <span class="nav-label flex-1 text-start" x-text="section.label"></span>
+              <svg class="nav-label w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200" :class="section.open ? '' : 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+            </button>
+            <ul class="nav-sub mt-0.5 space-y-0.5" role="list" :id="'nav-group-' + section.label.toLowerCase()" x-show="section.open" x-transition.opacity.duration.150ms>
+              <template x-for="item in (section.collapsible ? section.items : [])" :key="item.name">
+                <li>
+                  <a :href="item.href" class="nav-link flex items-center ps-11 pe-3 py-2 rounded-xl text-sm text-gray-600 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                     :aria-current="item.active ? 'page' : null">
+                    <span class="nav-label" x-text="item.name"></span>
+                  </a>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </template>
+    </nav>
+
+    <div class="border-t border-gray-100 px-3 py-4 flex-shrink-0">
+      <div class="user-wrap flex items-center gap-3">
+        <div class="user-avatar w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center flex-shrink-0 text-white text-xs font-bold" aria-hidden="true">MS</div>
+        <div class="user-info min-w-0">
+          <p class="text-sm font-semibold text-gray-800 truncate">Maria Santos</p>
+          <p class="text-[11px] text-gray-400 truncate">Store Manager</p>
+        </div>
+        <button type="button" onclick="location.href='login.html'" class="user-info ms-auto p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" aria-label="Sign out">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN COLUMN (header + page main, side by side with sidebar) ══ -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- ════════════════════════════════════════════
+         HEADER SECTION (shared markup + shared data
+         from main.js: toast, notifications, profile menu)
+    ════════════════════════════════════════════════ -->
+    <header class="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
+      <div class="flex items-center gap-3 px-4 sm:px-6 py-3.5">
+        <button id="collapse-btn"
+                class="hidden lg:flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-brand-600 transition-colors flex-shrink-0"
+                :class="{ 'is-collapsed': sidebarCollapsed }"
+                @click="toggleSidebar()"
+                :aria-expanded="(!sidebarCollapsed).toString()" aria-controls="sidebar"
+                :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v18"/>
+          </svg>
+        </button>
+        <button id="menu-btn"
+                class="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                @click="mobileOpen ? closeMobileSidebar() : openMobileSidebar()"
+                :aria-expanded="mobileOpen.toString()" aria-controls="sidebar"
+                :aria-label="mobileOpen ? 'Close navigation menu' : 'Open navigation menu'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <div class="flex-1 max-w-md">
+          <div class="relative">
+            <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+            <input id="global-search" type="search" placeholder="Search products, customers…"
+                   class="w-full ps-9 pe-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:bg-white focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition-colors min-h-[2.75rem]">
+          </div>
+        </div>
+        <div class="flex items-center gap-2 ms-auto">
+                    <div class="relative">
+            <button @click="notifOpen = !notifOpen"
+                    class="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                    :aria-label="'Notifications' + (unreadCount ? ' (' + unreadCount + ' unread)' : '')"
+                    aria-haspopup="true" :aria-expanded="notifOpen.toString()" aria-controls="notif-panel">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              <span class="absolute top-1.5 end-1.5 w-2 h-2 rounded-full bg-red-500" aria-hidden="true" x-show="unreadCount > 0"></span>
+            </button>
+
+            <div id="notif-panel" role="menu" aria-label="Notifications"
+                 x-show="notifOpen" x-transition
+                 @click.outside="notifOpen = false" @keydown.escape="notifOpen = false"
+                 class="fixed inset-x-3 top-[4.5rem] sm:absolute sm:inset-x-auto sm:end-0 sm:top-full sm:mt-2 sm:w-96 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <h2 class="text-sm font-bold text-gray-900">Notifications</h2>
+                <button @click="markAllRead()" x-show="unreadCount > 0"
+                        class="text-xs font-semibold text-brand-600 hover:text-brand-700">Mark all as read</button>
+              </div>
+              <ul class="max-h-[min(20rem,calc(100dvh-13rem))] overflow-y-auto overscroll-contain divide-y divide-gray-50" role="list">
+                <template x-for="n in notifications" :key="n.id">
+                  <li>
+                    <button @click="markRead(n)" class="w-full flex items-start gap-3 px-4 py-3 text-start hover:bg-gray-50/60 transition-colors" :class="{ 'bg-brand-50/40': !n.read }">
+                      <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" :class="n.iconBg" aria-hidden="true">
+                        <svg class="w-4 h-4" :class="n.iconColor" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="n.icon"/></svg>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-sm font-medium text-gray-800 truncate" x-text="n.title"></p>
+                        <p class="text-xs text-gray-500 mt-0.5" x-text="n.message"></p>
+                        <p class="text-[11px] text-gray-400 mt-1" x-text="n.time"></p>
+                      </div>
+                      <span class="w-2 h-2 rounded-full bg-brand-500 flex-shrink-0 mt-1.5" aria-hidden="true" x-show="!n.read"></span>
+                    </button>
+                  </li>
+                </template>
+                <li x-show="notifications.length === 0">
+                  <p class="px-4 py-8 text-center text-sm text-gray-400">You're all caught up.</p>
+                </li>
+              </ul>
+              <div class="px-4 py-3 border-t border-gray-100 text-center">
+                <a href="#" @click.prevent="notifOpen = false" class="text-xs font-semibold text-brand-600 hover:text-brand-700">View all notifications</a>
+              </div>
+            </div>
+          </div>
+          <div class="relative">
+            <button @click="profileOpen = !profileOpen"
+                    class="flex items-center gap-2 p-1 pe-2 rounded-full hover:bg-gray-100 transition-colors"
+                    aria-haspopup="true" :aria-expanded="profileOpen.toString()" aria-controls="profile-panel"
+                    aria-label="Account menu for Maria Santos">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0" aria-hidden="true">MS</div>
+              <svg class="w-3.5 h-3.5 text-gray-400 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+
+            <div id="profile-panel" role="menu" aria-label="Account menu"
+                 x-show="profileOpen" x-transition
+                 @click.outside="profileOpen = false" @keydown.escape="profileOpen = false"
+                 class="absolute end-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0" aria-hidden="true">MS</div>
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-gray-900 truncate">Maria Santos</p>
+                  <p class="text-xs text-gray-400 truncate">juan.delacruz@stockmaster.ph</p>
+                </div>
+              </div>
+              <ul class="py-1.5" role="list">
+                <li>
+                  <a href="profile.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                    My Profile
+                  </a>
+                </li>
+                <li>
+                  <a href="settings.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg>
+                    Account Settings
+                  </a>
+                </li>
+                <li>
+                  <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Help &amp; Support
+                  </a>
+                </li>
+              </ul>
+              <div class="border-t border-gray-100 py-1.5">
+                <button role="menuitem" type="button" onclick="location.href='login.html'" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" tabindex="-1" class="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-[1600px] mx-auto w-full">
+
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">Purchase Orders</h1>
+          <p class="text-sm text-gray-500 mt-0.5"><span x-text="openCount"></span> open · <span x-text="orders.length"></span> total<span class="text-red-500 font-semibold" x-show="count('overdue') > 0"> · <span x-text="count('overdue')"></span> overdue</span></p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button @click="exportCsv()" :disabled="!filtered.length" class="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-xl transition-colors min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Export CSV</button>
+          <button @click="openAdd()" class="flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm min-h-[44px]"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg> New PO</button>
+        </div>
+      </div>
+
+      <!-- STATS -->
+      <section aria-label="Purchase order summary">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Drafts</p><p class="text-lg font-bold text-gray-900" x-text="count('draft')"></p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-yellow-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Awaiting delivery</p><p class="text-lg font-bold text-gray-900" x-text="count('ordered')"></p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Received</p><p class="text-lg font-bold text-gray-900" x-text="count('received')"></p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Open order value</p><p class="text-lg font-bold text-gray-900" x-text="peso(openValue)"></p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LIST CARD -->
+      <section aria-labelledby="table-heading" class="bg-white rounded-2xl shadow-card">
+        <div class="p-4 sm:p-5 border-b border-gray-100 space-y-3">
+          <h2 id="table-heading" class="sr-only">Purchase order list</h2>
+          <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div class="relative sm:flex-1 sm:max-w-md">
+              <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+              <input type="search" x-model.debounce.200ms="query" placeholder="Search PO no., supplier or product…" aria-label="Search purchase orders"
+                     class="w-full ps-9 pe-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:bg-white focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition-colors min-h-[2.75rem]">
+            </div>
+            <select x-model="sortBy" class="field sm:!w-auto sm:flex-shrink-0 sm:ms-auto min-h-[2.75rem] py-2 text-sm" aria-label="Sort purchase orders">
+              <option value="recent">Sort: Newest first</option>
+              <option value="expected">Sort: Expected delivery</option>
+              <option value="total">Sort: Highest total</option>
+              <option value="supplier">Sort: Supplier (A–Z)</option>
+            </select>
+          </div>
+          <!-- status filter: one tap instead of a dropdown, with live counts -->
+          <div role="group" aria-label="Filter by status" class="flex gap-2 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 pb-3 sm:pb-1 chip-scroll">
+            <template x-for="t in tabs" :key="t.key">
+              <button type="button" @click="statusFilter = t.key" :aria-pressed="String(statusFilter === t.key)"
+                      class="flex-shrink-0 inline-flex items-center gap-2 ps-[0.9rem] pe-2 py-[0.45rem] rounded-full text-[0.8125rem] font-semibold border-[1.5px] min-h-[2.5rem] whitespace-nowrap transition-colors"
+                      :class="statusFilter === t.key ? 'bg-brand-600 border-brand-600 text-white' : (t.key === 'overdue' && count('overdue') > 0 ? 'bg-white border-red-200 text-red-600 hover:bg-red-50' : 'bg-white border-gray-200 text-gray-600 hover:border-brand-200 hover:text-brand-700')">
+                <span x-text="t.label"></span>
+                <span class="text-xs rounded-full px-1.5 min-w-[1.4rem] text-center py-0.5" :class="statusFilter === t.key ? 'bg-white/20 text-white' : (t.key === 'overdue' && count('overdue') > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500')" x-text="count(t.key)"></span>
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <!-- TABLE (xl and up) -->
+        <div class="tbl-wrap hidden xl:block" tabindex="0" role="region" aria-labelledby="table-heading" x-show="filtered.length > 0">
+          <table class="w-full text-sm" style="min-inline-size:56rem">
+            <caption class="sr-only">Purchase orders</caption>
+            <thead>
+              <tr class="text-left border-b border-gray-100">
+                <th scope="col" class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">PO no.</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Supplier</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Items</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider text-end">Total</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Expected</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Status</th>
+                <th scope="col" class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              <template x-for="o in paged" :key="o.no">
+                <tr class="hover:bg-gray-50/60 transition-colors" :class="isOverdue(o) ? 'bg-red-50/30' : ''">
+                  <td class="px-5 py-3">
+                    <button type="button" @click="openView(o, $el)" class="font-semibold text-gray-900 hover:text-brand-700 hover:underline underline-offset-2 text-start" :aria-label="'View details of ' + o.no" x-text="o.no"></button>
+                    <span class="block text-[11px] text-gray-400 mt-0.5" x-text="'Created ' + fmtDate(o.created)"></span>
+                  </td>
+                  <td class="px-3 py-3 text-gray-700" x-text="o.supplier"></td>
+                  <td class="px-3 py-3 max-w-[16rem]">
+                    <p class="text-gray-800 truncate" :title="o.lines.map(l => l.name).join(', ')" x-text="itemsLabel(o)"></p>
+                    <p class="text-[11px] text-gray-400 mt-0.5" x-text="units(o) + ' units'"></p>
+                  </td>
+                  <td class="px-3 py-3 text-gray-900 font-semibold text-end" x-text="peso(total(o))"></td>
+                  <td class="px-3 py-3 text-gray-600 whitespace-nowrap">
+                    <span x-text="o.status === 'received' ? fmtDate(o.receivedOn) : fmtDate(o.expected)"></span>
+                    <span class="block text-[11px] text-gray-400" x-show="o.status === 'received'">Received</span>
+                    <span class="block text-[11px]" x-show="dueInfo(o)" :class="dueInfo(o)?.cls" x-text="dueInfo(o)?.text"></span>
+                  </td>
+                  <td class="px-3 py-3"><span class="badge" :class="meta[o.status].cls"><span class="w-1.5 h-1.5 rounded-full flex-shrink-0" :class="meta[o.status].dot" aria-hidden="true"></span><span x-text="meta[o.status].label"></span></span></td>
+                  <td class="px-5 py-3">
+                    <!-- every row: [ main action ] [ ⋯ ] — same width, so nothing jumps around -->
+                    <div class="flex items-center justify-end gap-1">
+                      <!-- same icon row as Suppliers: View / Edit / Delete. Receive / Place order stay as the one main step. -->
+                      <div class="flex justify-end me-1">
+                        <button type="button" x-show="o.status === 'ordered'" @click="askAction(o, 'receive', $el)" class="inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm whitespace-nowrap px-3.5 min-h-[36px] text-xs"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg> Receive</button>
+                        <button type="button" x-show="o.status === 'draft'" @click="askAction(o, 'order', $el)" class="inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold bg-white text-brand-700 border border-brand-200 hover:bg-brand-50 transition-colors whitespace-nowrap px-3.5 min-h-[36px] text-xs"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg> Place order</button>
+                      </div>
+                      <button type="button" @click="openView(o, $el)" class="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors" :aria-label="'View ' + o.no" title="View"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button>
+                      <button type="button" @click="openEdit(o)" :class="o.status === 'draft' ? '' : 'invisible'" :disabled="o.status !== 'draft'" :tabindex="o.status === 'draft' ? 0 : -1" class="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors" :aria-label="'Edit ' + o.no" title="Edit"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+                      <button type="button" @click="askAction(o, o.status === 'ordered' ? 'cancel' : 'delete', $el)" :class="(o.status === 'draft' || o.status === 'cancelled' || o.status === 'ordered') ? '' : 'invisible'" :disabled="o.status === 'received'" :tabindex="o.status === 'received' ? -1 : 0" class="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" :aria-label="(o.status === 'ordered' ? 'Cancel ' : 'Delete ') + o.no" :title="o.status === 'ordered' ? 'Cancel order' : 'Delete'">
+                        <span x-show="o.status !== 'ordered'"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></span><span x-show="o.status === 'ordered'" style="display:none"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg></span>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- CARD LIST (below xl) -->
+        <ul class="xl:hidden grid grid-cols-1 md:grid-cols-2" role="list" aria-label="Purchase order list" x-show="filtered.length > 0">
+          <template x-for="o in paged" :key="'c' + o.no">
+            <li class="p-4 border-b border-gray-100 md:odd:border-e" :class="isOverdue(o) ? 'bg-red-50/30' : ''">
+              <div class="flex items-start gap-2">
+                <!-- tap the info to open details -->
+                <button type="button" @click="openView(o, $el)" class="min-w-0 flex-1 text-start" :aria-label="'View details of ' + o.no">
+                  <span class="flex items-center gap-2 flex-wrap">
+                    <span class="font-semibold text-gray-900 text-sm" x-text="o.no"></span>
+                    <span class="badge" :class="meta[o.status].cls"><span class="w-1.5 h-1.5 rounded-full flex-shrink-0" :class="meta[o.status].dot" aria-hidden="true"></span><span x-text="meta[o.status].label"></span></span>
+                  </span>
+                  <span class="block text-sm text-gray-700 mt-1 truncate" x-text="o.supplier"></span>
+                  <span class="block text-xs text-gray-400 mt-0.5 truncate" x-text="itemsLabel(o) + ' · ' + units(o) + ' units'"></span>
+                </button>
+                <div class="-me-2 flex-shrink-0">
+                  <button type="button" @click.stop="openMenu(o, $event)"
+                          class="w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0"
+                          aria-haspopup="menu" :aria-expanded="String(menu && menu.no === o.no)" :aria-label="'More actions for ' + o.no">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- footer: money + date on the left, ONE clear next step on the right -->
+              <div class="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-gray-100">
+                <div class="min-w-0">
+                  <p class="text-base font-bold text-gray-900" x-text="peso(total(o))"></p>
+                  <p class="text-xs text-gray-400 mt-0.5">
+                    <span x-text="o.status === 'received' ? 'Received ' + fmtDate(o.receivedOn) : 'Expected ' + fmtDate(o.expected)"></span>
+                  </p>
+                  <p class="text-xs mt-0.5" x-show="dueInfo(o)" :class="dueInfo(o)?.cls" x-text="dueInfo(o)?.text"></p>
+                </div>
+                <button type="button" x-show="o.status === 'ordered'" @click="askAction(o, 'receive', $el)" class="inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm whitespace-nowrap flex-shrink-0 px-5 min-h-[44px] text-sm"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg> Receive</button>
+                <button type="button" x-show="o.status === 'draft'" @click="askAction(o, 'order', $el)" class="inline-flex items-center justify-center gap-1.5 rounded-lg font-semibold bg-white text-brand-700 border border-brand-200 hover:bg-brand-50 transition-colors whitespace-nowrap flex-shrink-0 px-5 min-h-[44px] text-sm"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg> Place order</button>
+              </div>
+            </li>
+          </template>
+        </ul>
+
+        <!-- Empty states -->
+        <div class="p-10 text-center" x-show="orders.length === 0" style="display:none">
+          <div class="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-3" aria-hidden="true"><svg class="w-6 h-6 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg></div>
+          <h3 class="text-base font-bold text-gray-900">No purchase orders yet</h3>
+          <p class="text-sm text-gray-500 mt-1">Create an order to restock products from your suppliers.</p>
+          <button @click="openAdd()" class="mt-4 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold min-h-[44px]">Create your first order</button>
+        </div>
+        <p class="p-8 text-center text-sm text-gray-400" x-show="orders.length > 0 && filtered.length === 0" style="display:none">No purchase orders match your filters.</p>
+
+        <!-- Pagination -->
+        <div class="flex flex-col gap-3 px-4 sm:px-5 py-4 border-t border-gray-100 md:flex-row md:items-center md:justify-between" x-show="orders.length > 0 && filtered.length > 0" style="display:none">
+          <div class="flex items-center justify-between md:justify-start gap-4">
+            <p class="text-xs text-gray-500">Showing <strong x-text="pageStart"></strong>–<strong x-text="pageEnd"></strong> of <strong x-text="filtered.length"></strong></p>
+            <label class="flex items-center gap-2 text-xs text-gray-500">
+              <span class="whitespace-nowrap">Rows per page</span>
+              <select x-model.number="pageSize" class="field !w-auto !min-h-[2.25rem] !py-1 !ps-2 !pe-7 text-xs" aria-label="Rows per page">
+                <option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="50">50</option>
+              </select>
+            </label>
+          </div>
+          <nav class="flex items-center justify-between md:justify-end gap-1" aria-label="Pagination">
+            <button @click="page = Math.max(1, page - 1)" :disabled="page === 1" class="px-4 py-2 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] sm:min-h-[36px]">Previous</button>
+            <span class="sm:hidden text-xs font-semibold text-gray-600" aria-live="polite">Page <span x-text="page"></span> of <span x-text="totalPages"></span></span>
+            <div class="hidden sm:flex items-center gap-1">
+              <template x-for="(n, i) in pageList" :key="i">
+                <span>
+                  <span x-show="n === '…'" class="w-9 h-9 inline-flex items-center justify-center text-xs text-gray-400" aria-hidden="true">…</span>
+                  <button x-show="n !== '…'" @click="page = n" class="w-9 h-9 rounded-lg text-xs font-semibold transition-colors" :class="page === n ? 'bg-brand-600 text-white' : 'text-gray-600 hover:bg-gray-100'" :aria-current="page === n ? 'page' : null" :aria-label="'Page ' + n" x-text="n"></button>
+                </span>
+              </template>
+            </div>
+            <button @click="page = Math.min(totalPages, page + 1)" :disabled="page === totalPages" class="px-4 py-2 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] sm:min-h-[36px]">Next</button>
+          </nav>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ════ NEW / EDIT PURCHASE ORDER ════ -->
+<div id="modal-backdrop" class="pos-sheet" role="dialog" aria-modal="true" aria-labelledby="modal-title"
+     :class="{ open: modalOpen }" @keydown.escape="closeModal()"
+     @click="if ($event.target.id === 'modal-backdrop') closeModal()">
+  <div id="modal-dialog" x-ref="dialog" @keydown.tab="trapFocus($event)">
+    <div class="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-[1.25rem]">
+      <div>
+        <h2 id="modal-title" class="text-lg font-bold text-gray-900" x-text="editingNo ? 'Edit ' + editingNo : 'New purchase order'"></h2>
+        <p class="text-xs text-gray-400 mt-0.5">Fields marked <span class="text-red-500">*</span> are required</p>
+      </div>
+      <button type="button" @click="closeModal()" class="p-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors" aria-label="Close dialog">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <form @submit.prevent="submitForm('draft')" novalidate>
+      <div class="px-6 py-5 space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="po-supplier" class="block text-xs font-semibold text-gray-600 mb-1.5">Supplier <span class="text-red-500" aria-hidden="true">*</span></label>
+            <select id="po-supplier" class="field" :class="{ error: errors.supplier }" x-model="form.supplier" :aria-invalid="!!errors.supplier">
+              <option value="">Select a supplier…</option>
+              <template x-for="s in supplierNames" :key="s"><option :value="s" x-text="s" :selected="form.supplier === s"></option></template>
+            </select>
+            <p class="text-xs text-red-500 mt-1" x-show="errors.supplier" x-text="errors.supplier"></p>
+          </div>
+          <div>
+            <label for="po-expected" class="block text-xs font-semibold text-gray-600 mb-1.5">Expected delivery <span class="text-red-500" aria-hidden="true">*</span></label>
+            <input id="po-expected" type="date" class="field" :class="{ error: errors.expected }" x-model="form.expected" :aria-invalid="!!errors.expected">
+            <p class="text-xs text-red-500 mt-1" x-show="errors.expected" x-text="errors.expected"></p>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <p class="text-xs font-semibold text-gray-600">Items <span class="text-red-500" aria-hidden="true">*</span></p>
+            <button type="button" @click="addLowStock()" class="text-xs font-semibold text-brand-600 hover:text-brand-700">+ Add low-stock items</button>
+          </div>
+          <div class="space-y-2">
+            <template x-for="(l, i) in form.lines" :key="l.key">
+              <div class="rounded-xl border p-3 grid grid-cols-2 sm:grid-cols-4 gap-2" :class="l.bad ? 'border-red-300 bg-red-50/30' : 'border-gray-100'">
+                <div class="col-span-2 sm:col-span-4">
+                  <label :for="'po-med-' + i" class="sr-only">Product</label>
+                  <select :id="'po-med-' + i" class="field" x-model.number="l.med" @change="pickMed(l)">
+                    <option value="">Select a product…</option>
+                    <template x-for="m in meds" :key="m.id"><option :value="m.id" :selected="l.med === m.id" x-text="m.label + ' — ' + m.stock + ' in stock'"></option></template>
+                  </select>
+                </div>
+                <div>
+                  <label :for="'po-qty-' + i" class="block text-[11px] font-semibold text-gray-400 mb-1">Quantity</label>
+                  <input :id="'po-qty-' + i" type="number" min="1" step="1" inputmode="numeric" class="field" x-model.number="l.qty">
+                </div>
+                <div>
+                  <label :for="'po-cost-' + i" class="block text-[11px] font-semibold text-gray-400 mb-1">Unit cost (₱)</label>
+                  <input :id="'po-cost-' + i" type="number" min="0" step="0.01" inputmode="decimal" class="field" x-model.number="l.cost">
+                </div>
+                <div class="flex flex-col justify-end">
+                  <p class="text-[11px] font-semibold text-gray-400 mb-1">Line total</p>
+                  <p class="text-sm font-semibold text-gray-800 min-h-[2.75rem] flex items-center" x-text="peso((Number(l.qty) || 0) * (Number(l.cost) || 0))"></p>
+                </div>
+                <div class="flex items-end justify-end">
+                  <button type="button" @click="removeLine(i)" class="inline-flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold text-red-500 hover:bg-red-50 min-h-[44px]" :aria-label="'Remove item ' + (i + 1)">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg> Remove
+                  </button>
+                </div>
+              </div>
+            </template>
+          </div>
+          <p class="text-xs text-red-500 mt-1.5" x-show="errors.lines" x-text="errors.lines" role="alert"></p>
+          <button type="button" @click="addLine()" class="mt-2 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 transition-colors min-h-[44px]">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg> Add item
+          </button>
+        </div>
+
+        <div>
+          <label for="po-notes" class="block text-xs font-semibold text-gray-600 mb-1.5">Notes</label>
+          <textarea id="po-notes" rows="2" class="field" x-model.trim="form.notes" placeholder="Delivery instructions, reference number…"></textarea>
+        </div>
+
+        <div class="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3">
+          <span class="text-sm font-semibold text-gray-600">Order total</span>
+          <span class="text-base font-bold text-gray-900" x-text="peso(formTotal)"></span>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center justify-end gap-2 sm:gap-3 px-4 sm:px-6 py-4 border-t border-gray-100 sticky bottom-0 bg-white rounded-b-[1.25rem]">
+        <button type="button" @click="closeModal()" class="whitespace-nowrap flex-shrink-0 px-3 sm:px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors min-h-[44px]">Cancel</button>
+        <button type="submit" class="whitespace-nowrap flex-shrink-0 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors min-h-[44px]">Save as draft</button>
+        <button type="button" @click="submitForm('ordered')" class="whitespace-nowrap flex-shrink-0 px-4 sm:px-6 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px]">Place order</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ════ VIEW PURCHASE ORDER ════ -->
+<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-gray-900/55" style="display:none"
+     x-show="viewTarget" x-transition.opacity role="dialog" aria-modal="true" aria-labelledby="view-title"
+     @keydown.escape.window="viewTarget && !confirmInfo && !rcv && closeView()" @click.self="closeView()">
+  <div class="bg-white w-full sm:max-w-xl rounded-t-[1.5rem] sm:rounded-[1.25rem] shadow-card max-h-[92dvh] overflow-y-auto pb-[env(safe-area-inset-bottom,0px)] sm:pb-0" x-ref="viewDialog" @keydown.tab="trapView($event)">
+    <div class="flex items-start justify-between gap-3 px-6 py-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-[1.25rem]">
+      <div class="min-w-0">
+        <h2 id="view-title" class="text-lg font-bold text-gray-900" x-text="viewTarget?.no"></h2>
+        <p class="text-sm text-gray-500 mt-0.5" x-text="viewTarget?.supplier"></p>
+        <p class="mt-1.5" x-show="viewTarget"><span class="badge" :class="viewTarget ? meta[viewTarget.status].cls : ''"><span class="w-1.5 h-1.5 rounded-full flex-shrink-0" :class="viewTarget ? meta[viewTarget.status].dot : ''" aria-hidden="true"></span><span x-text="viewTarget ? meta[viewTarget.status].label : ''"></span></span></p>
+      </div>
+      <button type="button" @click="closeView()" x-ref="viewClose" class="p-2 -me-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors flex-shrink-0" aria-label="Close dialog">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <template x-if="viewTarget">
+      <div class="px-6 py-4 space-y-4">
+        <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <div><dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Created</dt><dd class="text-gray-800 mt-0.5" x-text="fmtDate(viewTarget.created)"></dd></div>
+          <div><dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Ordered</dt><dd class="text-gray-800 mt-0.5" x-text="fmtDate(viewTarget.orderDate)"></dd></div>
+          <div><dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Expected</dt><dd class="text-gray-800 mt-0.5" x-text="fmtDate(viewTarget.expected)"></dd><p class="text-[11px] mt-0.5" x-show="dueInfo(viewTarget)" :class="dueInfo(viewTarget)?.cls" x-text="dueInfo(viewTarget)?.text"></p></div>
+          <div><dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Received</dt><dd class="text-gray-800 mt-0.5" x-text="fmtDate(viewTarget.receivedOn)"></dd></div>
+        </dl>
+        <div class="tbl-wrap rounded-xl border border-gray-100" tabindex="0" role="region" aria-label="Order items">
+          <table class="w-full text-sm" style="min-inline-size:26rem">
+            <thead><tr class="text-left bg-gray-50/70"><th scope="col" class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Item</th><th scope="col" class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider text-end">Qty</th><th scope="col" class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider text-end">Unit cost</th><th scope="col" class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider text-end">Total</th></tr></thead>
+            <tbody class="divide-y divide-gray-50">
+              <template x-for="l in viewTarget.lines" :key="l.med">
+                <tr><td class="px-4 py-2.5 text-gray-800" x-text="l.name"></td><td class="px-3 py-2.5 text-gray-600 text-end" x-text="l.qty"></td><td class="px-3 py-2.5 text-gray-600 text-end" x-text="peso(l.cost)"></td><td class="px-4 py-2.5 text-gray-800 font-medium text-end" x-text="peso(l.qty * l.cost)"></td></tr>
+              </template>
+            </tbody>
+            <tfoot><tr class="border-t border-gray-100"><th scope="row" colspan="3" class="px-4 py-2.5 text-sm font-semibold text-gray-600 text-end">Order total</th><td class="px-4 py-2.5 text-sm font-bold text-gray-900 text-end" x-text="peso(total(viewTarget))"></td></tr></tfoot>
+          </table>
+        </div>
+        <div x-show="viewTarget.notes"><p class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Notes</p><p class="text-sm text-gray-800 mt-0.5 whitespace-pre-line" x-text="viewTarget.notes"></p></div>
+      </div>
+    </template>
+    <div class="flex flex-wrap items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 sticky bottom-0 bg-white rounded-b-[1.25rem]">
+      <button type="button" x-show="viewTarget && (viewTarget.status === 'draft' || viewTarget.status === 'ordered')" @click="askAction(viewTarget, 'cancel')" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-red-500 hover:bg-red-50 transition-colors min-h-[44px]">Cancel order</button>
+      <button type="button" x-show="viewTarget?.status === 'draft'" @click="editFromView()" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 transition-colors min-h-[44px]">Edit</button>
+      <button type="button" x-show="viewTarget?.status === 'draft'" @click="askAction(viewTarget, 'order')" class="px-5 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px]">Place order</button>
+      <button type="button" x-show="viewTarget?.status === 'ordered'" @click="askAction(viewTarget, 'receive')" class="px-5 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px]">Receive delivery</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ ROW ACTION MENU (one shared menu, positioned next to the ⋯ button so tables/cards never clip it) ════ -->
+<div x-show="menu" x-ref="menu" style="display:none" x-transition.opacity.duration.100ms
+     :style="menu ? { top: menu.top + 'px', left: menu.left + 'px' } : {}"
+     @click.outside="closeMenu(false)" @keydown.escape.window="menu && closeMenu(true)"
+     @keydown="menuKey($event)" @scroll.window.capture="closeMenu(false)" @resize.window="closeMenu(false)"
+     class="fixed z-40 w-52 bg-white rounded-xl shadow-card border border-gray-100 py-1">
+  <template x-if="menuPo">
+    <div role="menu" :aria-label="'Actions for ' + menuPo.no">
+      <button type="button" role="menuitem" x-show="!menu.hideView" @click="const o = menuPo, t = menu.trigger; closeMenu(false); openView(o, t)" class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 focus:bg-gray-50 outline-none">
+        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        View details
+      </button>
+      <button type="button" role="menuitem" x-show="menuPo.status === 'draft'" @click="const o = menuPo; closeMenu(false); openEdit(o)" class="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 focus:bg-gray-50 outline-none">
+        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        Edit
+      </button>
+      <template x-if="!menu.hideView && menuPo.status !== 'received'">
+        <div class="my-1 border-t border-gray-100" role="separator"></div>
+      </template>
+      <button type="button" role="menuitem" x-show="menuPo.status === 'draft' || menuPo.status === 'ordered'" @click="const o = menuPo, t = menu.trigger; closeMenu(false); askAction(o, 'cancel', t)" class="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 hover:bg-red-50 focus:bg-red-50 outline-none">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+        Cancel order
+      </button>
+      <button type="button" role="menuitem" x-show="menuPo.status === 'draft' || menuPo.status === 'cancelled'" @click="const o = menuPo, t = menu.trigger; closeMenu(false); askAction(o, 'delete', t)" class="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-500 hover:bg-red-50 focus:bg-red-50 outline-none">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9.5 3h5a1 1 0 011 1v3h-7V4a1 1 0 011-1z"/></svg>
+        Delete
+      </button>
+    </div>
+  </template>
+</div>
+
+<!-- ════ RECEIVE DELIVERY (check the goods, pick the date, confirm) ════ -->
+<div class="fixed inset-0 z-[55] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-gray-900/55" style="display:none"
+     x-show="rcv" x-transition.opacity role="dialog" aria-modal="true" aria-labelledby="rcv-title"
+     @keydown.escape.window="rcv && closeReceive()" @click.self="closeReceive()">
+  <div class="bg-white w-full sm:max-w-md rounded-t-[1.5rem] sm:rounded-[1.25rem] shadow-card max-h-[92dvh] overflow-y-auto pb-[env(safe-area-inset-bottom,0px)] sm:pb-0" x-ref="rcvDialog" @keydown.tab="trapRcv($event)">
+    <template x-if="rcv">
+      <div>
+        <div class="flex items-start gap-3 px-6 pt-6 pb-4">
+          <div class="w-11 h-11 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0" aria-hidden="true">
+            <svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+          </div>
+          <div class="min-w-0">
+            <h2 id="rcv-title" class="text-base font-bold text-gray-900" x-text="'Receive ' + rcv.po.no + '?'"></h2>
+            <p class="text-sm text-gray-500 mt-0.5">Check the delivery from <span class="font-semibold text-gray-700" x-text="rcv.po.supplier"></span> against this list.</p>
+          </div>
+        </div>
+        <div class="px-6 space-y-4">
+          <ul class="rounded-xl border border-gray-100 divide-y divide-gray-50 text-sm max-h-56 overflow-y-auto" role="list" aria-label="Items in this delivery">
+            <template x-for="l in rcv.po.lines" :key="l.med">
+              <li class="flex items-center justify-between gap-3 px-4 py-2.5">
+                <span class="min-w-0 text-gray-800 truncate" x-text="l.name"></span>
+                <span class="text-gray-600 font-semibold flex-shrink-0" x-text="'× ' + l.qty"></span>
+              </li>
+            </template>
+          </ul>
+          <div class="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3">
+            <span class="text-sm font-semibold text-gray-600">Order total</span>
+            <span class="text-base font-bold text-gray-900" x-text="peso(total(rcv.po))"></span>
+          </div>
+          <div>
+            <label for="rcv-date" class="block text-xs font-semibold text-gray-600 mb-1.5">Received on</label>
+            <input id="rcv-date" type="date" class="field" :class="{ error: rcv.err }" x-model="rcv.date" :max="todayIso" :aria-invalid="!!rcv.err" aria-describedby="rcv-help">
+            <p id="rcv-help" class="text-xs mt-1" :class="rcv.err ? 'text-red-500' : 'text-gray-400'" x-text="rcv.err || 'Once received, this order is locked and can’t be edited or cancelled.'" :role="rcv.err ? 'alert' : null"></p>
+          </div>
+        </div>
+        <div class="flex justify-end gap-3 px-6 py-5">
+          <button type="button" data-autofocus @click="closeReceive()" class="px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 min-h-[44px]">Not yet</button>
+          <button type="button" @click="confirmReceive()" class="px-5 py-2 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 shadow-sm min-h-[44px]">Confirm receipt</button>
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+
+<!-- ════ CONFIRM (place / receive / cancel / delete) ════ -->
+<div id="delete-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"
+     :class="{ open: confirmInfo }" @click="if ($event.target.id === 'delete-backdrop') cancelAction()" @keydown.escape="cancelAction()">
+  <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-card" x-ref="delDialog">
+    <div class="w-11 h-11 rounded-xl flex items-center justify-center mb-3" :class="confirmInfo?.danger ? 'bg-red-50' : 'bg-brand-50'" aria-hidden="true">
+      <svg class="w-5 h-5" :class="confirmInfo?.danger ? 'text-red-500' : 'text-brand-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"/></svg>
+    </div>
+    <h2 id="confirm-title" class="text-base font-bold text-gray-900" x-text="confirmInfo?.title"></h2>
+    <p class="text-sm text-gray-500 mt-1" x-text="confirmInfo?.body"></p>
+    <div class="flex justify-end gap-3 mt-5">
+      <button x-ref="delCancel" @click="cancelAction()" class="px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 min-h-[44px]" x-text="confirmInfo?.keep || 'Cancel'"></button>
+      <button @click="runAction()" class="px-4 py-2 rounded-xl text-sm font-semibold text-white min-h-[44px]" :class="confirmInfo?.danger ? 'bg-red-500 hover:bg-red-600' : 'bg-brand-600 hover:bg-brand-700'" x-text="confirmInfo?.btn"></button>
+    </div>
+  </div>
+</div>
+<script>
+function purchaseOrdersPage() {
+  let seq = 0;
+  const today = () => ppDate();
+  const blankLine = () => ({ key: ++seq, med: '', qty: 1, cost: 0, bad: false });
+  const blank = () => ({ supplier: '', expected: '', notes: '', lines: [blankLine()] });
+  return {
+    ...sharedChrome('purchase-orders.html'),
+    orders: ppPO.load(),
+    /* General-store catalogue (same data as the POS), labelled "Name Variant" */
+    meds: ppProducts().map(p => ({ id: p.id, label: p.name + (p.variant ? ' ' + p.variant : ''), stock: p.stock, reorder: p.reorder, cost: p.cost })),
+    supplierNames: [],
+    query: '', statusFilter: 'all', sortBy: 'recent', page: 1,
+    pageSize: (() => { try { const n = parseInt(localStorage.getItem('pp-po-pagesize'), 10); return [5, 10, 20, 50].includes(n) ? n : 10; } catch (e) { return 10; } })(),
+    modalOpen: false, editingNo: null, form: blank(), errors: {},
+    viewNo: null, viewFocus: null, confirm: null, confFocus: null, menu: null, rcv: null,
+    tabs: [
+      { key: 'all', label: 'All' }, { key: 'draft', label: 'Draft' }, { key: 'ordered', label: 'Ordered' },
+      { key: 'overdue', label: 'Overdue' }, { key: 'received', label: 'Received' }, { key: 'cancelled', label: 'Cancelled' },
+    ],
+    meta: {
+      draft:     { label: 'Draft',     cls: 'bg-gray-100 text-gray-600',     dot: 'bg-gray-400' },
+      ordered:   { label: 'Ordered',   cls: 'bg-yellow-50 text-yellow-700',  dot: 'bg-yellow-500' },
+      received:  { label: 'Received',  cls: 'bg-brand-50 text-brand-700',    dot: 'bg-brand-500' },
+      cancelled: { label: 'Cancelled', cls: 'bg-red-50 text-red-600',        dot: 'bg-red-400' },
+    },
+    init() {
+      ['statusFilter', 'query', 'sortBy'].forEach(k => this.$watch(k, () => { this.page = 1; this.menu = null; }));
+      this.$watch('pageSize', v => { this.page = 1; try { localStorage.setItem('pp-po-pagesize', String(v)); } catch (e) {} });
+      this.supplierNames = ppSuppliers.names();
+    },
+
+    /* ── helpers ── */
+    peso(n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+    fmtDate(v) { if (!v) return '—'; const d = new Date(v.length === 10 ? v + 'T00:00:00' : v); return isNaN(d) ? '—' : d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }); },
+    total(o) { return o.lines.reduce((t, l) => t + l.qty * l.cost, 0); },
+    units(o) { return o.lines.reduce((t, l) => t + l.qty, 0); },
+    isOverdue(o) { return o.status === 'ordered' && !!o.expected && o.expected < today(); },
+    count(key) {
+      if (key === 'all') return this.orders.length;
+      if (key === 'overdue') return this.orders.filter(o => this.isOverdue(o)).length;
+      return this.orders.filter(o => o.status === key).length;
+    },
+    get todayIso() { return today(); },
+    /* "Rice 1kg +1 more" — what's in the order, at a glance */
+    itemsLabel(o) { const n = o.lines.length; return (n ? o.lines[0].name : '—') + (n > 1 ? ' +' + (n - 1) + ' more' : ''); },
+    /* ordered orders only: how late / how soon */
+    dueInfo(o) {
+      if (!o || o.status !== 'ordered' || !o.expected) return null;
+      const n = Math.round((new Date(o.expected + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 86400000);
+      if (n < 0) return { text: (-n) + (n === -1 ? ' day' : ' days') + ' overdue', cls: 'text-red-500 font-semibold' };
+      if (n === 0) return { text: 'Due today', cls: 'text-amber-600 font-semibold' };
+      return { text: 'In ' + n + (n === 1 ? ' day' : ' days'), cls: 'text-gray-400' };
+    },
+    get openCount() { return this.count('draft') + this.count('ordered'); },
+    get openValue() { return this.orders.filter(o => o.status === 'draft' || o.status === 'ordered').reduce((t, o) => t + this.total(o), 0); },
+    persist(msg) {
+      const ok = ppPO.save(this.orders);
+      this.showToast(ok ? msg : msg + ' on this page, but couldn’t be saved (storage unavailable).');
+    },
+
+    /* ── list ── */
+    get filtered() {
+      const q = this.query.trim().toLowerCase();
+      const list = this.orders.filter(o => (this.statusFilter === 'all' || (this.statusFilter === 'overdue' ? this.isOverdue(o) : o.status === this.statusFilter)) &&
+        (!q || (o.no + ' ' + o.supplier + ' ' + o.lines.map(l => l.name).join(' ')).toLowerCase().includes(q)));
+      const by = {
+        recent: (a, b) => (b.created || '').localeCompare(a.created || '') || b.no.localeCompare(a.no),
+        expected: (a, b) => (a.expected || '9999').localeCompare(b.expected || '9999'),
+        total: (a, b) => this.total(b) - this.total(a),
+        supplier: (a, b) => a.supplier.localeCompare(b.supplier),
+      }[this.sortBy];
+      return list.sort(by);
+    },
+    get totalPages() { return Math.max(1, Math.ceil(this.filtered.length / this.pageSize)); },
+    get paged() {
+      if (this.page > this.totalPages) this.page = this.totalPages;
+      const s = (this.page - 1) * this.pageSize;
+      return this.filtered.slice(s, s + this.pageSize);
+    },
+    /* compact page list: 1 … 4 5 6 … 12 */
+    get pageList() {
+      const t = this.totalPages, p = this.page;
+      if (t <= 7) return Array.from({ length: t }, (_, i) => i + 1);
+      const set = new Set([1, 2, t - 1, t, p - 1, p, p + 1].filter(n => n >= 1 && n <= t));
+      const nums = [...set].sort((a, b) => a - b), out = [];
+      nums.forEach((n, i) => { if (i && n - nums[i - 1] > 1) out.push('…'); out.push(n); });
+      return out;
+    },
+    get pageStart() { return this.filtered.length ? (this.page - 1) * this.pageSize + 1 : 0; },
+    get pageEnd() { return Math.min(this.page * this.pageSize, this.filtered.length); },
+
+    /* ── view ── */
+    get viewTarget() { return this.orders.find(o => o.no === this.viewNo) || null; },
+    openView(o, trigger) {
+      this.viewFocus = trigger || document.activeElement; this.viewNo = o.no;
+      document.body.style.overflow = 'hidden';
+      this.$nextTick(() => this.$refs.viewClose && this.$refs.viewClose.focus());
+    },
+    closeView() {
+      this.viewNo = null; document.body.style.overflow = '';
+      if (this.viewFocus) this.viewFocus.focus();
+    },
+    editFromView() {
+      const o = this.viewTarget; if (!o) return;
+      this.viewNo = null; document.body.style.overflow = ''; this.viewFocus = null;
+      this.openEdit(o);
+    },
+    trapView(e) {
+      const f = [...this.$refs.viewDialog.querySelectorAll('a[href], button')].filter(el => !el.disabled && el.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    },
+
+    /* ── create / edit ── */
+    get formTotal() { return this.form.lines.reduce((t, l) => t + (Number(l.qty) || 0) * (Number(l.cost) || 0), 0); },
+    addLine() { this.form.lines.push(blankLine()); },
+    removeLine(i) { this.form.lines.splice(i, 1); if (!this.form.lines.length) this.addLine(); },
+    pickMed(l) {
+      const m = this.meds.find(x => x.id === Number(l.med));
+      if (m) { l.cost = m.cost; if (!l.qty || l.qty < 1) l.qty = 1; }
+      l.bad = false;
+    },
+    addLowStock() {
+      const have = new Set(this.form.lines.map(l => Number(l.med)));
+      const low = this.meds.filter(m => m.stock <= m.reorder && !have.has(m.id));
+      if (!low.length) { this.showToast('No more low-stock products to add'); return; }
+      const lines = this.form.lines.filter(l => l.med !== '');
+      low.forEach(m => lines.push({ key: ++seq, med: m.id, qty: Math.max(m.reorder * 2 - m.stock, 1), cost: m.cost, bad: false }));
+      this.form.lines = lines;
+      this.showToast(low.length + ' low-stock ' + (low.length === 1 ? 'item' : 'items') + ' added');
+    },
+    openAdd() {
+      this.editingNo = null; this.form = blank(); this.errors = {};
+      this.supplierNames = ppSuppliers.names();
+      this.form.expected = ppDate(7);
+      this.openModalCommon();
+    },
+    openEdit(o) {
+      this.editingNo = o.no; this.errors = {};
+      this.supplierNames = ppSuppliers.names();
+      if (!this.supplierNames.includes(o.supplier)) this.supplierNames = [...this.supplierNames, o.supplier];
+      this.form = { supplier: o.supplier, expected: o.expected || '', notes: o.notes || '',
+        lines: o.lines.map(l => ({ key: ++seq, med: l.med, qty: l.qty, cost: l.cost, bad: false })) };
+      this.openModalCommon();
+    },
+    validate() {
+      const f = this.form, e = {};
+      if (!f.supplier) e.supplier = 'Choose a supplier.';
+      if (!f.expected) e.expected = 'Pick an expected delivery date.';
+      const seen = new Set(); let bad = false, dup = false;
+      f.lines.forEach(l => {
+        l.bad = false;
+        const empty = l.med === '' && !(Number(l.qty) > 1) && !Number(l.cost);
+        if (empty) return;                                  // ignore untouched blank rows
+        if (l.med === '' || !(Number(l.qty) >= 1) || !Number.isInteger(Number(l.qty)) || !(Number(l.cost) >= 0)) { l.bad = true; bad = true; }
+        else if (seen.has(Number(l.med))) { l.bad = true; dup = true; }
+        else seen.add(Number(l.med));
+      });
+      if (!seen.size && !bad) e.lines = 'Add at least one item.';
+      else if (bad) e.lines = 'Each item needs a product, a whole-number quantity of 1 or more, and a unit cost.';
+      else if (dup) e.lines = 'A product can only appear once — combine the quantities.';
+      this.errors = e;
+      return !Object.keys(e).length;
+    },
+    submitForm(status) {
+      if (!this.validate()) {
+        this.$nextTick(() => { const el = this.$refs.dialog.querySelector('.field.error') || this.$refs.dialog.querySelector('[role=alert]'); if (el && el.focus) el.focus(); });
+        return;
+      }
+      const f = this.form;
+      const lines = f.lines.filter(l => l.med !== '').map(l => {
+        const m = this.meds.find(x => x.id === Number(l.med));
+        return { med: m.id, name: m.label, qty: Number(l.qty), cost: Number(l.cost) };
+      });
+      let msg;
+      if (this.editingNo) {
+        const o = this.orders.find(x => x.no === this.editingNo);
+        Object.assign(o, { supplier: f.supplier, expected: f.expected, notes: f.notes, lines });
+        if (status === 'ordered') { o.status = 'ordered'; o.orderDate = today(); }
+        msg = o.no + (status === 'ordered' ? ' placed' : ' updated');
+      } else {
+        const no = ppPO.nextNo(this.orders);
+        this.orders.unshift({ no, supplier: f.supplier, status, created: new Date().toISOString(), orderDate: status === 'ordered' ? today() : null,
+          expected: f.expected, receivedOn: null, notes: f.notes, lines });
+        msg = no + (status === 'ordered' ? ' placed with ' + f.supplier : ' saved as draft');
+      }
+      this.closeModal();
+      this.persist(msg);
+    },
+
+    /* ── status changes / delete (confirmed) ── */
+    get confirmInfo() {
+      if (!this.confirm) return null;
+      const { po, action } = this.confirm;
+      return {
+        order:   { title: 'Place ' + po.no + '?', body: 'This marks the order as sent to ' + po.supplier + '. You can still cancel it until it’s received.', btn: 'Place order', keep: 'Not yet', danger: false },
+        cancel:  { title: 'Cancel ' + po.no + '?', body: 'The order to ' + po.supplier + ' will be marked as cancelled.', btn: 'Cancel order', keep: 'Keep order', danger: true },
+        delete:  { title: 'Delete ' + po.no + '?', body: 'This permanently removes the order from your list.', btn: 'Delete', keep: 'Keep it', danger: true },
+      }[action];
+    },
+    askAction(po, action, trigger) {
+      if (action === 'receive') { this.openReceive(po, trigger); return; }
+      this.confFocus = trigger || document.activeElement; this.confirm = { po, action };
+      this.$nextTick(() => this.$refs.delCancel.focus());
+    },
+    cancelAction() { this.confirm = null; if (this.confFocus) this.confFocus.focus(); },
+    runAction() {
+      if (!this.confirm) return;
+      const { po, action } = this.confirm;
+      this.confirm = null; this.confFocus = null;
+      let msg;
+      if (action === 'order')        { po.status = 'ordered'; po.orderDate = today(); msg = po.no + ' placed with ' + po.supplier; }
+      else if (action === 'cancel')  { po.status = 'cancelled'; msg = po.no + ' cancelled'; }
+      else if (action === 'delete')  { this.orders = this.orders.filter(x => x.no !== po.no); if (this.viewNo === po.no) this.closeView(); msg = po.no + ' deleted'; }
+      this.persist(msg);
+    },
+
+    /* ── row action menu (fixed-position, shared by table + cards) ── */
+    get menuPo() { return this.menu ? (this.orders.find(o => o.no === this.menu.no) || null) : null; },
+    openMenu(o, ev, fromTable) {
+      if (this.menu && this.menu.no === o.no) { this.closeMenu(true); return; }
+      const btn = ev.currentTarget, r = btn.getBoundingClientRect(), w = 208;
+      this.menu = { no: o.no, trigger: btn, hideView: !!fromTable && (o.status === 'received' || o.status === 'cancelled'), top: r.bottom + 4, left: Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8) };
+      this.$nextTick(() => {
+        const el = this.$refs.menu; if (!el) return;
+        const h = el.offsetHeight;
+        if (r.bottom + 4 + h > window.innerHeight - 8) this.menu.top = Math.max(8, r.top - h - 4);
+        const first = el.querySelector('[role=menuitem]:not([style*="display: none"])'); if (first) first.focus();
+      });
+    },
+    closeMenu(refocus) {
+      if (!this.menu) return;
+      const t = this.menu.trigger; this.menu = null;
+      if (refocus && t) t.focus();
+    },
+    menuKey(e) {
+      const items = [...this.$refs.menu.querySelectorAll('[role=menuitem]')].filter(el => el.offsetParent !== null);
+      if (!items.length) return;
+      const i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+      else if (e.key === 'Tab') { this.closeMenu(false); }
+    },
+
+    /* ── receive a delivery ── */
+    openReceive(po, trigger) {
+      this.confFocus = trigger || document.activeElement;
+      this.rcv = { po, date: today(), err: '' };
+      document.body.style.overflow = 'hidden';
+      this.$nextTick(() => { const f = this.$refs.rcvDialog && this.$refs.rcvDialog.querySelector('[data-autofocus]'); if (f) f.focus(); });
+    },
+    closeReceive() {
+      this.rcv = null;
+      if (!this.viewNo) document.body.style.overflow = '';
+      if (this.confFocus) this.confFocus.focus();
+    },
+    confirmReceive() {
+      if (!this.rcv) return;
+      const { po, date } = this.rcv;
+      if (!date) { this.rcv.err = 'Pick the date the delivery arrived.'; return; }
+      if (date > today()) { this.rcv.err = 'The received date can’t be in the future.'; return; }
+      if (po.orderDate && date < po.orderDate) { this.rcv.err = 'It can’t be earlier than the order date (' + this.fmtDate(po.orderDate) + ').'; return; }
+      po.status = 'received'; po.receivedOn = date;
+      this.rcv = null; this.confFocus = null;
+      if (!this.viewNo) document.body.style.overflow = '';
+      this.persist(po.no + ' marked as received');
+    },
+    trapRcv(e) {
+      const f = [...this.$refs.rcvDialog.querySelectorAll('a[href], button, input, select')].filter(el => !el.disabled && el.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    },
+
+    /* ── export ── */
+    exportCsv() {
+      const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+      const rows = [['PO no.', 'Supplier', 'Status', 'Ordered', 'Expected', 'Received', 'Items', 'Units', 'Total', 'Notes']];
+      this.filtered.forEach(o => rows.push([o.no, o.supplier, this.meta[o.status].label, o.orderDate || '', o.expected || '', o.receivedOn || '', o.lines.length, this.units(o), this.total(o).toFixed(2), o.notes]));
+      const blob = new Blob(['\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'purchase-orders-' + today() + '.csv';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    },
+  };
+}
+</script>
+</body>
+</html>

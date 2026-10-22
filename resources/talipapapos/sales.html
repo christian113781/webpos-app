@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Sales History — TalipapaPOS</title>
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Shared dashboard logic (sidebar, toast, notifications, modal plumbing) -->
+  <script src="assets/js/main.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { poppins: ['Poppins', 'sans-serif'] },
+          colors: {
+            brand: {
+              50:  '#effaf4', 100: '#d7f3e3', 200: '#b0e6c9',
+              400: '#3fbf84', 500: '#1b9a62', 600: '#12804f',
+              700: '#0e6a42', 900: '#0b2e22',
+            },
+          },
+          boxShadow: {
+            card: '0 1px 4px 0 rgba(27,154,98,.08), 0 4px 16px 0 rgba(27,154,98,.06)',
+          },
+        }
+      }
+    }
+  </script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="font-poppins text-gray-800 antialiased" x-data="salesPage()" x-cloak>
+<!-- ════ MOBILE OVERLAY ════ -->
+<div id="sidebar-overlay"
+     class="fixed inset-0 bg-gray-900/50 z-20 lg:hidden"
+     aria-hidden="true"
+     x-show="mobileOpen"
+     x-transition.opacity
+     @click="closeMobileSidebar()"
+     style="display:none"></div>
+
+<!-- ════ TOAST ════ -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true" :class="{ show: toast.show }">
+  <svg class="w-4 h-4 text-brand-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+  </svg>
+  <span x-text="toast.msg">Done</span>
+</div>
+<!-- ════════════════════════════════════════════════
+     LAYOUT SHELL
+════════════════════════════════════════════════ -->
+<div class="flex min-h-[100dvh]">
+
+  <!-- ════════════════════════════════════════════
+       SIDEBAR SECTION (shared markup + shared data
+       from main.js: navSections, sidebarCollapsed, mobileOpen)
+  ════════════════════════════════════════════════ -->
+  <aside id="sidebar"
+         aria-label="Primary navigation"
+         class="bg-white flex flex-col shadow-card flex-shrink-0 relative z-30"
+         :class="{ collapsed: sidebarCollapsed, 'mobile-open': mobileOpen }">
+
+    <div class="logo-wrap flex items-center gap-3 px-6 py-4 min-h-[77px] border-b border-gray-100 flex-shrink-0">
+      <a href="dashboard.html" class="flex items-center min-w-0" aria-label="TalipapaPOS — go to dashboard">
+        <img src="assets/img/logo.png" alt="TalipapaPOS" class="logo-full h-7 w-auto max-w-full" width="150" height="28">
+        <img src="assets/img/favicon.png" alt="TalipapaPOS" class="logo-mark w-9 h-9" width="36" height="36">
+      </a>
+    </div>
+
+    <nav class="flex-1 sidebar-scroll py-3 px-2" aria-label="Primary">
+      <template x-for="section in navSections" :key="section.label">
+        <div>
+          <!-- plain section: small heading + icon links -->
+          <p x-show="!section.collapsible" class="nav-section-label px-3 mb-2 mt-4 first:mt-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wider" x-text="section.label"></p>
+          <ul class="space-y-0.5" role="list" x-show="!section.collapsible">
+            <template x-for="item in (section.collapsible ? [] : section.items)" :key="item.name">
+              <li>
+                <a :href="item.href" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-700 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                   :aria-current="item.active ? 'page' : null" :title="item.name">
+                  <svg class="w-5 h-5 flex-shrink-0" :class="item.active ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon"/>
+                  </svg>
+                  <span class="nav-label" x-text="item.name"></span>
+                </a>
+              </li>
+            </template>
+          </ul>
+
+          <!-- dropdown group: icon + label + chevron, then text-only links -->
+          <div x-show="section.collapsible" style="display:none">
+            <button type="button"
+                    class="nav-link w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                    :class="section.items.some(i => i.active) ? 'text-brand-700 font-semibold' : 'text-gray-700'"
+                    @click="onGroupClick(section)" :aria-expanded="String(!!section.open)" :aria-controls="'nav-group-' + section.label.toLowerCase()" :title="section.label">
+              <svg class="w-5 h-5 flex-shrink-0" :class="section.items.some(i => i.active) ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="section.icon"/>
+              </svg>
+              <span class="nav-label flex-1 text-start" x-text="section.label"></span>
+              <svg class="nav-label w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200" :class="section.open ? '' : 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+            </button>
+            <ul class="nav-sub mt-0.5 space-y-0.5" role="list" :id="'nav-group-' + section.label.toLowerCase()" x-show="section.open" x-transition.opacity.duration.150ms>
+              <template x-for="item in (section.collapsible ? section.items : [])" :key="item.name">
+                <li>
+                  <a :href="item.href" class="nav-link flex items-center ps-11 pe-3 py-2 rounded-xl text-sm text-gray-600 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                     :aria-current="item.active ? 'page' : null">
+                    <span class="nav-label" x-text="item.name"></span>
+                  </a>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </template>
+    </nav>
+
+    <div class="border-t border-gray-100 px-3 py-4 flex-shrink-0">
+      <div class="user-wrap flex items-center gap-3">
+        <div class="user-avatar w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center flex-shrink-0 text-white text-xs font-bold" aria-hidden="true">MS</div>
+        <div class="user-info min-w-0">
+          <p class="text-sm font-semibold text-gray-800 truncate">Maria Santos</p>
+          <p class="text-[11px] text-gray-400 truncate">Cashier</p>
+        </div>
+        <button type="button" onclick="location.href='login.html'" class="user-info ms-auto p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" aria-label="Sign out">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN COLUMN (header + page main, side by side with sidebar) ══ -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- ════════════════════════════════════════════
+         HEADER SECTION (shared markup + shared data
+         from main.js: toast, notifications, profile menu)
+    ════════════════════════════════════════════════ -->
+    <header class="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
+      <div class="flex items-center gap-3 px-4 sm:px-6 py-3.5">
+        <button id="collapse-btn"
+                class="hidden lg:flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-brand-600 transition-colors flex-shrink-0"
+                :class="{ 'is-collapsed': sidebarCollapsed }"
+                @click="toggleSidebar()"
+                :aria-expanded="(!sidebarCollapsed).toString()" aria-controls="sidebar"
+                :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v18"/>
+          </svg>
+        </button>
+        <button id="menu-btn"
+                class="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                @click="mobileOpen ? closeMobileSidebar() : openMobileSidebar()"
+                :aria-expanded="mobileOpen.toString()" aria-controls="sidebar"
+                :aria-label="mobileOpen ? 'Close navigation menu' : 'Open navigation menu'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <div class="flex-1 max-w-md">
+          <div class="relative">
+            <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+            <input id="global-search" type="search" placeholder="Search products, customers…"
+                   class="w-full ps-9 pe-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:bg-white focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition-colors min-h-[2.75rem]">
+          </div>
+        </div>
+        <div class="flex items-center gap-2 ms-auto">
+                    <div class="relative">
+            <button @click="notifOpen = !notifOpen"
+                    class="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                    :aria-label="'Notifications' + (unreadCount ? ' (' + unreadCount + ' unread)' : '')"
+                    aria-haspopup="true" :aria-expanded="notifOpen.toString()" aria-controls="notif-panel">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              <span class="absolute top-1.5 end-1.5 w-2 h-2 rounded-full bg-red-500" aria-hidden="true" x-show="unreadCount > 0"></span>
+            </button>
+
+            <div id="notif-panel" role="menu" aria-label="Notifications"
+                 x-show="notifOpen" x-transition
+                 @click.outside="notifOpen = false" @keydown.escape="notifOpen = false"
+                 class="fixed inset-x-3 top-[4.5rem] sm:absolute sm:inset-x-auto sm:end-0 sm:top-full sm:mt-2 sm:w-96 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <h2 class="text-sm font-bold text-gray-900">Notifications</h2>
+                <button @click="markAllRead()" x-show="unreadCount > 0"
+                        class="text-xs font-semibold text-brand-600 hover:text-brand-700">Mark all as read</button>
+              </div>
+              <ul class="max-h-[min(20rem,calc(100dvh-13rem))] overflow-y-auto overscroll-contain divide-y divide-gray-50" role="list">
+                <template x-for="n in notifications" :key="n.id">
+                  <li>
+                    <button @click="markRead(n)" class="w-full flex items-start gap-3 px-4 py-3 text-start hover:bg-gray-50/60 transition-colors" :class="{ 'bg-brand-50/40': !n.read }">
+                      <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" :class="n.iconBg" aria-hidden="true">
+                        <svg class="w-4 h-4" :class="n.iconColor" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="n.icon"/></svg>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-sm font-medium text-gray-800 truncate" x-text="n.title"></p>
+                        <p class="text-xs text-gray-500 mt-0.5" x-text="n.message"></p>
+                        <p class="text-[11px] text-gray-400 mt-1" x-text="n.time"></p>
+                      </div>
+                      <span class="w-2 h-2 rounded-full bg-brand-500 flex-shrink-0 mt-1.5" aria-hidden="true" x-show="!n.read"></span>
+                    </button>
+                  </li>
+                </template>
+                <li x-show="notifications.length === 0">
+                  <p class="px-4 py-8 text-center text-sm text-gray-400">You're all caught up.</p>
+                </li>
+              </ul>
+              <div class="px-4 py-3 border-t border-gray-100 text-center">
+                <a href="#" @click.prevent="notifOpen = false" class="text-xs font-semibold text-brand-600 hover:text-brand-700">View all notifications</a>
+              </div>
+            </div>
+          </div>
+          <div class="relative">
+            <button @click="profileOpen = !profileOpen"
+                    class="flex items-center gap-2 p-1 pe-2 rounded-full hover:bg-gray-100 transition-colors"
+                    aria-haspopup="true" :aria-expanded="profileOpen.toString()" aria-controls="profile-panel"
+                    aria-label="Account menu for Maria Santos">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0" aria-hidden="true">MS</div>
+              <svg class="w-3.5 h-3.5 text-gray-400 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+
+            <div id="profile-panel" role="menu" aria-label="Account menu"
+                 x-show="profileOpen" x-transition
+                 @click.outside="profileOpen = false" @keydown.escape="profileOpen = false"
+                 class="absolute end-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0" aria-hidden="true">MS</div>
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-gray-900 truncate">Maria Santos</p>
+                  <p class="text-xs text-gray-400 truncate">juan.delacruz@stockmaster.ph</p>
+                </div>
+              </div>
+              <ul class="py-1.5" role="list">
+                <li>
+                  <a href="profile.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                    My Profile
+                  </a>
+                </li>
+                <li>
+                  <a href="settings.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg>
+                    Account Settings
+                  </a>
+                </li>
+                <li>
+                  <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Help &amp; Support
+                  </a>
+                </li>
+              </ul>
+              <div class="border-t border-gray-100 py-1.5">
+                <button role="menuitem" type="button" onclick="location.href='login.html'" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" tabindex="-1" class="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-[1600px] mx-auto w-full">
+
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">Sales History</h1>
+          <p class="text-sm text-gray-500 mt-0.5"><span x-text="filtered.length"></span> of <span x-text="sales.length"></span> sales</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button @click="exportCsv()" :disabled="!filtered.length" class="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-xl transition-colors min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Export CSV
+          </button>
+          <a href="pos.html" class="flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm min-h-[44px]">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg> New sale
+          </a>
+        </div>
+      </div>
+
+      <!-- MINI STATS (today, completed sales only) -->
+      <section aria-label="Today's sales summary">
+        <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <div><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Today's sales</p><p class="text-lg font-bold text-gray-900" x-text="peso(today.total)"></p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg></div>
+            <div><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Transactions today</p><p class="text-lg font-bold text-gray-900" x-text="today.count"></p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></div>
+            <div><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Items sold today</p><p class="text-lg font-bold text-gray-900" x-text="today.items"></p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg></div>
+            <div><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Voided (all time)</p><p class="text-lg font-bold text-gray-900" x-text="sales.filter(s => s.status === 'voided').length"></p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LIST CARD -->
+      <section aria-labelledby="table-heading" class="bg-white rounded-2xl shadow-card">
+        <div class="p-4 sm:p-5 border-b border-gray-100 grid grid-cols-1 sm:grid-cols-2 xl:flex xl:flex-row xl:items-center gap-3">
+          <h2 id="table-heading" class="sr-only">Sales list</h2>
+          <div class="relative flex-1 sm:col-span-2 xl:col-span-1 xl:max-w-sm">
+            <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+            <input type="search" x-model.debounce.200ms="query" placeholder="Search receipt no. or customer…" aria-label="Search sales"
+                   class="w-full ps-9 pe-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:bg-white focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition-colors min-h-[2.75rem]">
+          </div>
+          <select x-model="dateFilter" class="field xl:!w-auto min-h-[2.75rem] py-2 text-sm" aria-label="Filter by date">
+            <option value="all">All time</option>
+            <option value="today">Today</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+          </select>
+          <select x-model="methodFilter" class="field xl:!w-auto min-h-[2.75rem] py-2 text-sm" aria-label="Filter by payment method">
+            <option value="">All payments</option>
+            <option value="cash">Cash</option>
+            <option value="gcash">GCash</option>
+            <option value="card">Card</option>
+          </select>
+          <select x-model="statusFilter" class="field xl:!w-auto min-h-[2.75rem] py-2 text-sm" aria-label="Filter by status">
+            <option value="">All statuses</option>
+            <option value="completed">Completed</option>
+            <option value="voided">Voided</option>
+          </select>
+          <select x-model="sortBy" class="field xl:!w-auto min-h-[2.75rem] py-2 text-sm xl:ms-auto" aria-label="Sort sales">
+            <option value="newest">Sort: Newest first</option>
+            <option value="oldest">Sort: Oldest first</option>
+            <option value="total">Sort: Total (high → low)</option>
+          </select>
+        </div>
+
+        <!-- EMPTY (nothing saved yet) -->
+        <div x-show="sales.length === 0" class="px-6 py-14 text-center">
+          <div class="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-3"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg></div>
+          <h3 class="text-base font-bold text-gray-900">No sales yet</h3>
+          <p class="text-sm text-gray-500 mt-1 max-w-sm mx-auto">Every sale you complete in Point of Sale is saved here. You can also load a few sample sales to try this page out.</p>
+          <div class="flex flex-wrap justify-center gap-3 mt-5">
+            <a href="pos.html" class="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold min-h-[44px] inline-flex items-center">Go to Point of Sale</a>
+            <button @click="loadSamples()" class="px-5 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-semibold min-h-[44px]">Load sample sales</button>
+          </div>
+        </div>
+
+        <div x-show="sales.length > 0">
+        <!-- TABLE (xl and up) -->
+        <div class="tbl-wrap hidden xl:block" tabindex="0" role="region" aria-labelledby="table-heading">
+          <table class="w-full text-sm" style="min-inline-size:48rem">
+            <caption class="sr-only">Sales list</caption>
+            <thead>
+              <tr class="text-left border-b border-gray-100">
+                <th scope="col" class="px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Receipt no.</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Date &amp; time</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Items</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Payment</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider text-end">Total</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Status</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              <template x-for="s in paged" :key="s.no">
+                <tr class="hover:bg-gray-50/60 transition-colors">
+                  <td class="px-4 py-3 font-semibold text-gray-700 whitespace-nowrap" x-text="s.no"></td>
+                  <td class="px-3 py-3 text-gray-500 text-xs whitespace-nowrap" x-text="s.date"></td>
+                  <td class="px-3 py-3 text-gray-600"><span x-text="summary(s)"></span></td>
+                  <td class="px-3 py-3 text-gray-600" x-text="methodLabel(s.method)"></td>
+                  <td class="px-3 py-3 text-end font-semibold" :class="s.status === 'voided' ? 'text-gray-400 line-through' : 'text-gray-800'" x-text="peso(s.t.total)"></td>
+                  <td class="px-3 py-3"><span class="badge" :class="s.status === 'voided' ? 'bg-red-50 text-red-600' : 'bg-brand-50 text-brand-700'"><span class="w-1.5 h-1.5 rounded-full flex-shrink-0" :class="s.status === 'voided' ? 'bg-red-500' : 'bg-brand-500'" aria-hidden="true"></span><span x-text="s.status === 'voided' ? 'Voided' : 'Completed'"></span></span></td>
+                  <td class="px-3 py-3 text-end">
+                    <button @click="openSale(s)" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 transition-colors" :aria-label="'View ' + s.no">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg> View
+                    </button>
+                  </td>
+                </tr>
+              </template>
+              <tr x-show="filtered.length === 0"><td colspan="7" class="px-5 py-10 text-center text-sm text-gray-400">No sales match your filters.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- CARD LIST (below xl) -->
+        <ul class="xl:hidden grid grid-cols-1 md:grid-cols-2" role="list" aria-label="Sales list">
+          <template x-for="s in paged" :key="'c' + s.no">
+            <li class="p-4 border-b border-gray-100 md:odd:border-e">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="font-semibold text-gray-900 text-sm" x-text="s.no"></p>
+                  <p class="text-xs text-gray-500 mt-0.5" x-text="s.date + ' · ' + methodLabel(s.method)"></p>
+                  <p class="text-xs text-gray-600 mt-1" x-text="summary(s)"></p>
+                </div>
+                <div class="text-end flex-shrink-0">
+                  <p class="text-sm font-bold" :class="s.status === 'voided' ? 'text-gray-400 line-through' : 'text-gray-900'" x-text="peso(s.t.total)"></p>
+                  <span class="badge mt-1" :class="s.status === 'voided' ? 'bg-red-50 text-red-600' : 'bg-brand-50 text-brand-700'" x-text="s.status === 'voided' ? 'Voided' : 'Completed'"></span>
+                </div>
+              </div>
+              <button @click="openSale(s)" class="mt-3 w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 min-h-[44px]" :aria-label="'View ' + s.no">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg> View receipt
+              </button>
+            </li>
+          </template>
+          <li x-show="filtered.length === 0" class="p-8 text-center text-sm text-gray-400 md:col-span-2">No sales match your filters.</li>
+        </ul>
+
+        <!-- Pagination -->
+        <div class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-5 py-4 border-t border-gray-100" x-show="filtered.length > 0">
+          <p class="text-xs text-gray-500 text-center sm:text-start">Showing <strong x-text="pageStart"></strong>–<strong x-text="pageEnd"></strong> of <strong x-text="filtered.length"></strong></p>
+          <nav class="flex items-center justify-between sm:justify-end gap-1" aria-label="Pagination">
+            <button @click="page = Math.max(1, page - 1)" :disabled="page === 1" class="px-4 py-2 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] sm:min-h-[36px]">← Prev</button>
+            <span class="sm:hidden text-xs font-semibold text-gray-600" aria-live="polite">Page <span x-text="page"></span> of <span x-text="totalPages"></span></span>
+            <template x-for="n in totalPages" :key="n">
+              <button @click="page = n" class="hidden sm:inline-block w-9 h-9 rounded-lg text-xs font-semibold transition-colors" :class="page === n ? 'bg-brand-600 text-white' : 'text-gray-600 hover:bg-gray-100'" :aria-current="page === n ? 'page' : null" x-text="n"></button>
+            </template>
+            <button @click="page = Math.min(totalPages, page + 1)" :disabled="page === totalPages" class="px-4 py-2 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] sm:min-h-[36px]">Next →</button>
+          </nav>
+        </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ════ RECEIPT VIEW (reuses the POS receipt styles, so Print works the same) ════ -->
+<div id="receipt-backdrop" role="dialog" aria-modal="true" aria-labelledby="receipt-title"
+     :class="{ open: sale }" @keydown.escape.window="sale && closeSale()"
+     @click="if ($event.target.id === 'receipt-backdrop') closeSale()">
+  <div id="receipt-dialog" x-ref="dialog" x-show="sale" x-transition.opacity @keydown.tab="trapFocus($event)">
+    <div class="flex items-start justify-between gap-3 px-5 pt-5 pb-3 no-print">
+      <div class="min-w-0">
+        <h2 id="receipt-title" class="text-lg font-bold text-gray-900" x-text="sale ? 'Receipt ' + sale.no : ''"></h2>
+        <p class="text-xs text-gray-400 mt-0.5" x-text="sale ? sale.date + ' · ' + sale.cashier : ''"></p>
+      </div>
+      <button type="button" @click="closeSale()" class="p-2 -me-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close receipt"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+
+    <div class="mx-4 mb-3 rounded-xl bg-red-50 text-red-700 text-xs px-3 py-2 no-print" x-show="sale && sale.status === 'voided'">
+      <strong>Voided</strong><span x-text="sale && sale.voidedAt ? ' on ' + new Date(sale.voidedAt).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : ''"></span><br>
+      Reason: <span x-text="sale ? sale.voidReason : ''"></span>
+    </div>
+
+    <div id="receipt" class="receipt" x-show="sale">
+      <template x-if="sale">
+        <div>
+          <p class="r-center r-bold r-lg" x-show="sale.status === 'voided'">*** VOIDED ***</p>
+          <p class="r-center r-bold r-lg" x-text="receiptCfg.title || receiptCfg.store"></p>
+          <p class="r-center whitespace-pre-line" x-text="receiptCfg.header"></p>
+          <hr>
+          <p class="r-row"><span>Receipt</span><span x-text="sale.no"></span></p>
+          <p class="r-row"><span>Date</span><span x-text="sale.date"></span></p>
+          <p class="r-row"><span>Cashier</span><span x-text="sale.cashier"></span></p>
+          <template x-if="sale.customer"><p class="r-row"><span x-text="sale.customer.type"></span><span x-text="sale.customer.name + ' · ' + sale.customer.id"></span></p></template>
+          <hr>
+          <template x-for="l in sale.lines" :key="l.m.id">
+            <div class="r-item">
+              <p class="r-bold" x-text="lineName(l)"></p>
+              <p class="r-row"><span x-text="l.qty + ' x ' + peso(l.m.price)"></span><span x-text="peso(l.total)"></span></p>
+            </div>
+          </template>
+          <hr>
+          <p class="r-row"><span>Subtotal</span><span x-text="peso(sale.t.gross)"></span></p>
+          <template x-if="sale.discount === 'none'"><p class="r-row"><span>VAT (12%) incl.</span><span x-text="peso(sale.t.vat)"></span></p></template>
+          <template x-if="sale.discount !== 'none'"><div><p class="r-row"><span>VAT exemption</span><span x-text="'-' + peso(sale.t.vat)"></span></p><p class="r-row"><span>20% discount</span><span x-text="'-' + peso(sale.t.disc)"></span></p></div></template>
+          <p class="r-row r-bold r-lg"><span>TOTAL</span><span x-text="peso(sale.t.total)"></span></p>
+          <hr>
+          <p class="r-row"><span x-text="methodLabel(sale.method)"></span><span x-text="peso(sale.method === 'cash' ? sale.tendered : sale.t.total)"></span></p>
+          <p class="r-row" x-show="sale.method === 'cash'"><span>Change</span><span x-text="peso(sale.change)"></span></p>
+          <p class="r-row" x-show="sale.method !== 'cash'"><span>Ref</span><span x-text="sale.ref"></span></p>
+          <hr>
+          <p class="r-center whitespace-pre-line" x-text="receiptCfg.footer"></p>
+          <p class="r-center">Keep this receipt for returns.</p>
+        </div>
+      </template>
+    </div>
+
+    <div class="flex flex-wrap gap-3 px-5 py-4 no-print border-t border-gray-100">
+      <button @click="window.print()" class="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 min-h-[48px] flex items-center justify-center gap-2"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg> Reprint</button>
+      <button x-show="sale && sale.status === 'completed'" @click="askVoid()" class="flex-1 py-3 rounded-xl border border-red-200 text-sm font-semibold text-red-600 hover:bg-red-50 min-h-[48px]">Void sale</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ VOID CONFIRM ════ -->
+<div id="delete-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="void-title"
+     :class="{ open: voidTarget }" @click="if ($event.target.id === 'delete-backdrop') cancelVoid()" @keydown.escape="cancelVoid()">
+  <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-card">
+    <div class="w-11 h-11 rounded-xl bg-red-50 flex items-center justify-center mb-3" aria-hidden="true"><svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg></div>
+    <h2 id="void-title" class="text-base font-bold text-gray-900">Void this sale?</h2>
+    <p class="text-sm text-gray-500 mt-1">Receipt <strong class="text-gray-800" x-text="voidTarget ? voidTarget.no : ''"></strong> (<span x-text="voidTarget ? peso(voidTarget.t.total) : ''"></span>) will be marked as voided and left out of your totals. It stays in the list for your records.</p>
+    <label for="void-reason" class="block text-xs font-semibold text-gray-600 mt-4 mb-1.5">Reason <span class="text-red-500" aria-hidden="true">*</span></label>
+    <textarea id="void-reason" x-ref="voidReason" rows="2" class="field resize-none" :class="{ error: voidError }" x-model.trim="voidReason" placeholder="e.g. Wrong item rung up"></textarea>
+    <p class="mt-1 text-xs text-red-500" role="alert" x-show="voidError">Please enter a reason.</p>
+    <div class="flex justify-end gap-3 mt-5">
+      <button @click="cancelVoid()" class="px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 min-h-[44px]">Cancel</button>
+      <button @click="confirmVoid()" class="px-4 py-2 rounded-xl text-sm font-semibold bg-red-500 text-white hover:bg-red-600 min-h-[44px]">Void sale</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function salesPage() {
+  const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+  return {
+    ...sharedChrome('sales.html'),
+
+    sales: ppSales.load(),
+    query: '', dateFilter: 'all', methodFilter: '', statusFilter: '', sortBy: 'newest', page: 1, pageSize: 10,
+    sale: null, lastFocus: null,
+    /* receipt text follows the POS > Receipt settings (saved in this browser) */
+    receiptCfg: (() => { const d = { store: 'TalipapaPOS Store', title: 'TalipapaPOS Store', header: '123 Sample St., Manila\nTIN: 000-000-000-000', footer: 'Thank you! Come again.' };
+      try { return { ...d, ...JSON.parse(localStorage.getItem('pp_receiptCfg') || '{}') }; } catch (e) { return d; } })(),
+    voidTarget: null, voidReason: '', voidError: false,
+
+    init() { ['query', 'dateFilter', 'methodFilter', 'statusFilter', 'sortBy'].forEach(k => this.$watch(k, () => { this.page = 1; })); },
+
+    /* ── helpers ── */
+    peso(n) { return '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: Math.round(n * 100) % 100 ? 2 : 0, maximumFractionDigits: 2 }); },
+    methodLabel(k) { return { cash: 'Cash', gcash: 'GCash', card: 'Card' }[k] || k; },
+    itemCount(s) { return s.lines.reduce((n, l) => n + l.qty, 0); },
+    lineName(l) { const m = l.m, v = m.variant || m.strength || ''; return (m.name || m.brand) + (v && v !== '\u2014' ? ' ' + v : ''); },
+    summary(s) { const f = s.lines[0], more = s.lines.length - 1; return this.lineName(f) + (more ? ' +' + more + ' more' : '') + ' · ' + this.itemCount(s) + ' item(s)'; },
+
+    /* ── today's numbers (voided sales are left out) ── */
+    get today() {
+      const t0 = startOfToday().getTime();
+      const list = this.sales.filter(s => s.status === 'completed' && new Date(s.ts).getTime() >= t0);
+      return { count: list.length, total: list.reduce((n, s) => n + s.t.total, 0), items: list.reduce((n, s) => n + this.itemCount(s), 0) };
+    },
+
+    /* ── list ── */
+    get filtered() {
+      const q = this.query.trim().toLowerCase();
+      let cutoff = 0;
+      if (this.dateFilter === 'today') cutoff = startOfToday().getTime();
+      else if (this.dateFilter !== 'all') { const d = startOfToday(); d.setDate(d.getDate() - (parseInt(this.dateFilter, 10) - 1)); cutoff = d.getTime(); }
+      const list = this.sales.filter(s =>
+        new Date(s.ts).getTime() >= cutoff &&
+        (!this.methodFilter || s.method === this.methodFilter) &&
+        (!this.statusFilter || s.status === this.statusFilter) &&
+        (!q || (s.no + ' ' + (s.customer ? s.customer.name : '')).toLowerCase().includes(q)));
+      const by = {
+        newest: (a, b) => b.ts.localeCompare(a.ts),
+        oldest: (a, b) => a.ts.localeCompare(b.ts),
+        total:  (a, b) => b.t.total - a.t.total,
+      }[this.sortBy];
+      return list.sort(by);
+    },
+    get totalPages() { return Math.max(1, Math.ceil(this.filtered.length / this.pageSize)); },
+    get paged() {
+      if (this.page > this.totalPages) this.page = this.totalPages;
+      const s = (this.page - 1) * this.pageSize;
+      return this.filtered.slice(s, s + this.pageSize);
+    },
+    get pageStart() { return this.filtered.length ? (this.page - 1) * this.pageSize + 1 : 0; },
+    get pageEnd() { return Math.min(this.page * this.pageSize, this.filtered.length); },
+
+    /* ── receipt view ── */
+    openSale(s) {
+      this.lastFocus = document.activeElement; this.sale = s;
+      document.body.style.overflow = 'hidden';
+      this.$nextTick(() => { const b = this.$refs.dialog.querySelector('button'); if (b) b.focus(); });
+    },
+    closeSale() {
+      this.sale = null; document.body.style.overflow = '';
+      if (this.lastFocus) this.lastFocus.focus();
+    },
+    trapFocus(e) {
+      const f = [...this.$refs.dialog.querySelectorAll('button')].filter(el => !el.disabled && el.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    },
+
+    /* ── void ── */
+    askVoid() {
+      this.voidTarget = this.sale; this.voidReason = ''; this.voidError = false;
+      this.sale = null;                                    // close the receipt, keep the page locked
+      this.$nextTick(() => this.$refs.voidReason.focus());
+    },
+    cancelVoid() { this.voidTarget = null; document.body.style.overflow = ''; if (this.lastFocus) this.lastFocus.focus(); },
+    confirmVoid() {
+      if (!this.voidReason) { this.voidError = true; return; }
+      const s = this.voidTarget;
+      s.status = 'voided'; s.voidReason = this.voidReason; s.voidedAt = new Date().toISOString();
+      const saved = ppSales.save(this.sales);
+      this.voidTarget = null; document.body.style.overflow = '';
+      this.showToast(saved ? s.no + ' voided' : s.no + ' voided on this page, but couldn’t be saved (storage unavailable).');
+    },
+
+    /* ── sample data + export ── */
+    loadSamples() {
+      this.sales = ppSampleStoreSales();
+      ppSales.save(this.sales);
+      this.showToast('Sample sales loaded');
+    },
+    exportCsv() {
+      const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+      const rows = [['Receipt', 'Date', 'Cashier', 'Items', 'Payment', 'Reference', 'Subtotal', 'Discount', 'Total', 'Status', 'Void reason']];
+      this.filtered.forEach(s => rows.push([s.no, s.date, s.cashier, this.itemCount(s), this.methodLabel(s.method), s.ref || '', s.t.gross.toFixed(2), (s.t.disc || 0).toFixed(2), s.t.total.toFixed(2), s.status, s.voidReason || '']));
+      const blob = new Blob(['\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'sales-history-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    },
+  };
+}
+</script>
+</body>
+</html>

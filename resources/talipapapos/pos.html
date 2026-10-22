@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Point of Sale — TalipapaPOS</title>
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Shared dashboard logic (sidebar, toast, notifications, modal plumbing) -->
+  <script src="assets/js/main.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { poppins: ['Poppins', 'sans-serif'] },
+          colors: {
+            brand: {
+              50:  '#effaf4', 100: '#d7f3e3', 200: '#b0e6c9',
+              400: '#3fbf84', 500: '#1b9a62', 600: '#12804f',
+              700: '#0e6a42', 900: '#0b2e22',
+            },
+          },
+          boxShadow: {
+            card: '0 1px 4px 0 rgba(27,154,98,.08), 0 4px 16px 0 rgba(27,154,98,.06)',
+          },
+        }
+      }
+    }
+  </script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="font-poppins text-gray-800 antialiased" x-data="posPage()" x-init="initView(); autoReconnect()" x-cloak>
+<!-- ════ MOBILE OVERLAY ════ -->
+<div id="sidebar-overlay"
+     class="fixed inset-0 bg-gray-900/50 z-20 lg:hidden"
+     aria-hidden="true"
+     x-show="mobileOpen"
+     x-transition.opacity
+     @click="closeMobileSidebar()"
+     style="display:none"></div>
+
+<!-- ════ TOAST ════ -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true" :class="{ show: toast.show }">
+  <svg class="w-4 h-4 text-brand-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+  </svg>
+  <span x-text="toast.msg">Done</span>
+</div>
+<!-- ════════════════════════════════════════════════
+     LAYOUT SHELL
+════════════════════════════════════════════════ -->
+<div class="flex min-h-[100dvh]">
+
+  <!-- ════════════════════════════════════════════
+       SIDEBAR SECTION (shared markup + shared data
+       from main.js: navSections, sidebarCollapsed, mobileOpen)
+  ════════════════════════════════════════════════ -->
+  <aside id="sidebar"
+         aria-label="Primary navigation"
+         class="bg-white flex flex-col shadow-card flex-shrink-0 relative z-30"
+         :class="{ collapsed: sidebarCollapsed, 'mobile-open': mobileOpen }">
+
+    <div class="logo-wrap flex items-center gap-3 px-6 py-4 min-h-[77px] border-b border-gray-100 flex-shrink-0">
+      <a href="dashboard.html" class="flex items-center min-w-0" aria-label="TalipapaPOS — go to dashboard">
+        <img src="assets/img/logo.png" alt="TalipapaPOS" class="logo-full h-7 w-auto max-w-full" width="150" height="28">
+        <img src="assets/img/favicon.png" alt="TalipapaPOS" class="logo-mark w-9 h-9" width="36" height="36">
+      </a>
+    </div>
+
+    <nav class="flex-1 sidebar-scroll py-3 px-2" aria-label="Primary">
+      <template x-for="section in navSections" :key="section.label">
+        <div>
+          <!-- plain section: small heading + icon links -->
+          <p x-show="!section.collapsible" class="nav-section-label px-3 mb-2 mt-4 first:mt-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wider" x-text="section.label"></p>
+          <ul class="space-y-0.5" role="list" x-show="!section.collapsible">
+            <template x-for="item in (section.collapsible ? [] : section.items)" :key="item.name">
+              <li>
+                <a :href="item.href" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-700 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                   :aria-current="item.active ? 'page' : null" :title="item.name">
+                  <svg class="w-5 h-5 flex-shrink-0" :class="item.active ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon"/>
+                  </svg>
+                  <span class="nav-label" x-text="item.name"></span>
+                </a>
+              </li>
+            </template>
+          </ul>
+
+          <!-- dropdown group: icon + label + chevron, then text-only links -->
+          <div x-show="section.collapsible" style="display:none">
+            <button type="button"
+                    class="nav-link w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                    :class="section.items.some(i => i.active) ? 'text-brand-700 font-semibold' : 'text-gray-700'"
+                    @click="onGroupClick(section)" :aria-expanded="String(!!section.open)" :aria-controls="'nav-group-' + section.label.toLowerCase()" :title="section.label">
+              <svg class="w-5 h-5 flex-shrink-0" :class="section.items.some(i => i.active) ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="section.icon"/>
+              </svg>
+              <span class="nav-label flex-1 text-start" x-text="section.label"></span>
+              <svg class="nav-label w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200" :class="section.open ? '' : 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+            </button>
+            <ul class="nav-sub mt-0.5 space-y-0.5" role="list" :id="'nav-group-' + section.label.toLowerCase()" x-show="section.open" x-transition.opacity.duration.150ms>
+              <template x-for="item in (section.collapsible ? section.items : [])" :key="item.name">
+                <li>
+                  <a :href="item.href" class="nav-link flex items-center ps-11 pe-3 py-2 rounded-xl text-sm text-gray-600 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                     :aria-current="item.active ? 'page' : null">
+                    <span class="nav-label" x-text="item.name"></span>
+                  </a>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </template>
+    </nav>
+
+    <div class="border-t border-gray-100 px-3 py-4 flex-shrink-0">
+      <div class="user-wrap flex items-center gap-3">
+        <div class="user-avatar w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center flex-shrink-0 text-white text-xs font-bold" aria-hidden="true">MS</div>
+        <div class="user-info min-w-0">
+          <p class="text-sm font-semibold text-gray-800 truncate">Maria Santos</p>
+          <p class="text-[11px] text-gray-400 truncate">Cashier</p>
+        </div>
+        <button type="button" onclick="location.href='login.html'" class="user-info ms-auto p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" aria-label="Sign out">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN COLUMN (header + page main, side by side with sidebar) ══ -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- ════════════════════════════════════════════
+         HEADER SECTION (shared markup + shared data
+         from main.js: toast, notifications, profile menu)
+    ════════════════════════════════════════════════ -->
+    <header class="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
+      <div class="flex items-center gap-3 px-4 sm:px-6 py-3.5">
+        <button id="collapse-btn"
+                class="hidden lg:flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-brand-600 transition-colors flex-shrink-0"
+                :class="{ 'is-collapsed': sidebarCollapsed }"
+                @click="toggleSidebar()"
+                :aria-expanded="(!sidebarCollapsed).toString()" aria-controls="sidebar"
+                :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v18"/>
+          </svg>
+        </button>
+        <button id="menu-btn"
+                class="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                @click="mobileOpen ? closeMobileSidebar() : openMobileSidebar()"
+                :aria-expanded="mobileOpen.toString()" aria-controls="sidebar"
+                :aria-label="mobileOpen ? 'Close navigation menu' : 'Open navigation menu'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <div class="flex-1 max-w-md">
+          <div class="relative">
+            <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+            <input id="global-search" type="search" placeholder="Search products, customers…"
+                   class="w-full ps-9 pe-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:bg-white focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition-colors min-h-[2.75rem]">
+          </div>
+        </div>
+        <div class="flex items-center gap-2 ms-auto">
+                    <div class="relative">
+            <button @click="notifOpen = !notifOpen"
+                    class="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                    :aria-label="'Notifications' + (unreadCount ? ' (' + unreadCount + ' unread)' : '')"
+                    aria-haspopup="true" :aria-expanded="notifOpen.toString()" aria-controls="notif-panel">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              <span class="absolute top-1.5 end-1.5 w-2 h-2 rounded-full bg-red-500" aria-hidden="true" x-show="unreadCount > 0"></span>
+            </button>
+
+            <div id="notif-panel" role="menu" aria-label="Notifications"
+                 x-show="notifOpen" x-transition
+                 @click.outside="notifOpen = false" @keydown.escape="notifOpen = false"
+                 class="fixed inset-x-3 top-[4.5rem] sm:absolute sm:inset-x-auto sm:end-0 sm:top-full sm:mt-2 sm:w-96 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <h2 class="text-sm font-bold text-gray-900">Notifications</h2>
+                <button @click="markAllRead()" x-show="unreadCount > 0"
+                        class="text-xs font-semibold text-brand-600 hover:text-brand-700">Mark all as read</button>
+              </div>
+              <ul class="max-h-[min(20rem,calc(100dvh-13rem))] overflow-y-auto overscroll-contain divide-y divide-gray-50" role="list">
+                <template x-for="n in notifications" :key="n.id">
+                  <li>
+                    <button @click="markRead(n)" class="w-full flex items-start gap-3 px-4 py-3 text-start hover:bg-gray-50/60 transition-colors" :class="{ 'bg-brand-50/40': !n.read }">
+                      <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" :class="n.iconBg" aria-hidden="true">
+                        <svg class="w-4 h-4" :class="n.iconColor" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="n.icon"/></svg>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-sm font-medium text-gray-800 truncate" x-text="n.title"></p>
+                        <p class="text-xs text-gray-500 mt-0.5" x-text="n.message"></p>
+                        <p class="text-[11px] text-gray-400 mt-1" x-text="n.time"></p>
+                      </div>
+                      <span class="w-2 h-2 rounded-full bg-brand-500 flex-shrink-0 mt-1.5" aria-hidden="true" x-show="!n.read"></span>
+                    </button>
+                  </li>
+                </template>
+                <li x-show="notifications.length === 0">
+                  <p class="px-4 py-8 text-center text-sm text-gray-400">You're all caught up.</p>
+                </li>
+              </ul>
+              <div class="px-4 py-3 border-t border-gray-100 text-center">
+                <a href="#" @click.prevent="notifOpen = false" class="text-xs font-semibold text-brand-600 hover:text-brand-700">View all notifications</a>
+              </div>
+            </div>
+          </div>
+          <div class="relative">
+            <button @click="profileOpen = !profileOpen"
+                    class="flex items-center gap-2 p-1 pe-2 rounded-full hover:bg-gray-100 transition-colors"
+                    aria-haspopup="true" :aria-expanded="profileOpen.toString()" aria-controls="profile-panel"
+                    aria-label="Account menu for Maria Santos">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0" aria-hidden="true">MS</div>
+              <svg class="w-3.5 h-3.5 text-gray-400 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+
+            <div id="profile-panel" role="menu" aria-label="Account menu"
+                 x-show="profileOpen" x-transition
+                 @click.outside="profileOpen = false" @keydown.escape="profileOpen = false"
+                 class="absolute end-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0" aria-hidden="true">MS</div>
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-gray-900 truncate">Maria Santos</p>
+                  <p class="text-xs text-gray-400 truncate">juan.delacruz@stockmaster.ph</p>
+                </div>
+              </div>
+              <ul class="py-1.5" role="list">
+                <li>
+                  <a href="profile.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                    My Profile
+                  </a>
+                </li>
+                <li>
+                  <a href="settings.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg>
+                    Account Settings
+                  </a>
+                </li>
+                <li>
+                  <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Help &amp; Support
+                  </a>
+                </li>
+              </ul>
+              <div class="border-t border-gray-100 py-1.5">
+                <button role="menuitem" type="button" onclick="location.href='login.html'" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+    <main id="main" tabindex="-1" class="flex-1 px-4 sm:px-6 py-6 max-w-[1600px] mx-auto w-full pb-24 xl:pb-6">
+      <div class="xl:grid xl:grid-cols-[minmax(0,1fr)_24rem] xl:gap-6 xl:items-start">
+
+        <!-- ═══ LEFT: PRODUCT PICKER ═══ -->
+        <section aria-labelledby="pos-title" class="min-w-0">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div>
+              <h1 id="pos-title" class="text-xl sm:text-2xl font-bold text-gray-900">Point of Sale</h1>
+              <p class="text-sm text-gray-500 mt-0.5">Receipt <span class="font-semibold text-gray-700" x-text="receiptNo"></span> · Cashier: Maria Santos</p>
+            </div>
+            <div class="flex items-center gap-2">
+            <button type="button" x-show="printerCfg.mode === 'usb' ? (usbSupported && usb.name) : (btSupported && printerCfg.name)" @click="printerReady ? openSettings() : reconnectPrinter(true)" class="inline-flex items-center gap-2 bg-white rounded-xl px-3 shadow-card text-sm font-semibold min-h-[3rem]" :class="printerReady ? 'text-brand-700' : 'text-red-600'" :title="printerReady ? 'Printer ready' : 'Tap to reconnect printer'">
+              <span class="w-2 h-2 rounded-full" :class="printerCfg.connecting ? 'bg-amber-400 animate-pulse' : (printerReady ? 'bg-brand-500' : 'bg-red-500')"></span>
+              <span class="hidden sm:inline" x-text="printerCfg.connecting ? 'Connecting…' : (printerReady ? 'Printer ready' : 'Reconnect printer')"></span>
+              <span class="sm:hidden" x-text="printerCfg.connecting ? '…' : (printerReady ? 'Ready' : 'Reconnect')"></span>
+            </button>
+            <button type="button" @click="openSettings()" class="inline-flex items-center gap-2 bg-white rounded-xl px-3 shadow-card text-sm font-semibold text-gray-600 hover:text-brand-700 hover:bg-brand-50 transition-colors min-h-[3rem]" aria-haspopup="dialog">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              <span class="hidden sm:inline">Settings</span>
+            </button>
+            <div class="flex items-center gap-1 bg-white rounded-xl p-1 shadow-card" role="group" aria-label="Layout">
+              <template x-for="v in views" :key="v.key">
+                <button type="button" @click="setView(v.key)" :aria-pressed="view === v.key" :title="v.label" class="view-btn" :class="{ active: view === v.key }">
+                  <span x-html="v.icon" aria-hidden="true"></span><span class="hidden sm:inline" x-text="v.label"></span>
+                </button>
+              </template>
+            </div>
+            </div>
+          </div>
+
+          <div class="relative mb-3">
+            <svg class="absolute start-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+            <input id="pos-search" type="search" x-model.debounce.150ms="query" @keydown.enter.prevent="enterSearch($event.target.value)"
+                   placeholder="Search or scan barcode…" aria-label="Search products or scan barcode" autocomplete="off"
+                   class="w-full ps-11 pe-4 py-3 text-sm bg-white border border-gray-200 rounded-xl shadow-card placeholder:text-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition-colors min-h-[3rem]">
+          </div>
+
+          <div class="no-scrollbar flex gap-2 overflow-x-auto sm:overflow-visible sm:flex-wrap pb-2 mb-3 -mx-4 px-4 sm:mx-0 sm:px-0" role="group" aria-label="Filter by category">
+            <button @click="category = ''" class="chip" :class="{ active: category === '' }">All</button>
+            <template x-for="c in categories" :key="c">
+              <button @click="category = c" class="chip" :class="{ active: category === c }" x-text="c"></button>
+            </template>
+          </div>
+
+          <ul class="grid gap-3" :class="gridClass" role="list" aria-label="Products">
+            <template x-for="m in results" :key="m.id">
+              <li class="flex">
+
+                <!-- CARD (Large / Grid) -->
+                <template x-if="view !== 'list'">
+                  <button type="button" @click="add(m)" :disabled="!sellable(m)"
+                          class="pcard w-full h-full text-start bg-white rounded-2xl shadow-card overflow-hidden flex flex-col"
+                          :aria-label="'Add ' + m.name + ' ' + m.variant + ' to cart' + (sellable(m) ? '' : ', unavailable')">
+                    <div class="relative aspect-[4/3] bg-[#e8f7ef] flex items-center justify-center text-brand-600 font-bold text-3xl flex-shrink-0">
+                      <img :src="m.img || 'assets/img/product.svg'" alt="" loading="lazy" draggable="false" class="absolute inset-0 w-full h-full object-contain" @error="if (!$el.src.endsWith('product.svg')) $el.src = 'assets/img/product.svg'">
+                      <span x-show="inCart(m.id)" class="absolute top-2 end-2 min-w-6 h-6 px-1.5 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center" x-text="inCart(m.id)"></span>
+                      <span x-show="expiryState(m) === 'soon' && sellable(m)" class="absolute bottom-2 start-2 badge bg-amber-50 text-amber-600 !text-[11px] !py-0.5 !px-2 shadow-sm" x-text="'Exp in ' + daysLeft(m) + 'd'"></span>
+                      <span x-show="!sellable(m)" class="absolute inset-0 bg-white/75 flex items-center justify-center">
+                        <span class="badge bg-red-50 text-red-600" x-text="expiryState(m) === 'expired' ? 'Expired' : 'Out of stock'"></span>
+                      </span>
+                    </div>
+                    <div class="p-3 flex-1 flex flex-col">
+                      <p class="text-sm font-semibold text-gray-900 leading-snug"><span x-text="m.name"></span> <span class="text-gray-400 font-normal" x-text="m.variant"></span></p>
+                      <p class="text-xs text-gray-500 mt-0.5 truncate" x-text="m.brand || m.category"></p>
+                      <div class="flex items-end justify-between gap-2 mt-auto pt-2">
+                        <span class="text-base font-bold text-brand-700" x-text="peso(m.price)"></span>
+                        <span class="text-xs font-medium whitespace-nowrap" :class="m.stock <= m.reorder ? 'text-amber-500' : 'text-gray-400'" x-text="m.stock + ' ' + m.unit"></span>
+                      </div>
+                    </div>
+                  </button>
+                </template>
+
+                <!-- ROW (List) -->
+                <template x-if="view === 'list'">
+                  <button type="button" @click="add(m)" :disabled="!sellable(m)"
+                          class="pcard w-full text-start bg-white rounded-xl shadow-card flex items-center gap-3 p-2.5 pe-3.5"
+                          :aria-label="'Add ' + m.name + ' ' + m.variant + ' to cart' + (sellable(m) ? '' : ', unavailable')">
+                    <div class="relative w-14 h-14 rounded-lg bg-[#e8f7ef] text-brand-600 font-bold text-lg flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      <img :src="m.img || 'assets/img/product.svg'" alt="" loading="lazy" draggable="false" class="absolute inset-0 w-full h-full object-cover" @error="if (!$el.src.endsWith('product.svg')) $el.src = 'assets/img/product.svg'">
+                      <span x-show="inCart(m.id)" class="absolute top-0.5 end-0.5 min-w-5 h-5 px-1 rounded-full bg-brand-600 text-white text-[11px] font-bold flex items-center justify-center" x-text="inCart(m.id)"></span>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-semibold text-gray-900 leading-snug">
+                        <span x-text="m.name"></span> <span class="text-gray-400 font-normal" x-text="m.variant"></span>
+                      </p>
+                      <p class="text-xs text-gray-500 truncate" x-text="m.brand || m.category"></p>
+                      <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                        <span class="text-xs font-medium" :class="m.stock <= m.reorder ? 'text-amber-500' : 'text-gray-400'" x-text="m.stock + ' ' + m.unit + ' in stock'"></span>
+                        <span x-show="expiryState(m) === 'soon' && sellable(m)" class="badge bg-amber-50 text-amber-600 !text-[11px] !py-0 !px-2" x-text="'Exp in ' + daysLeft(m) + 'd'"></span>
+                        <span x-show="!sellable(m)" class="badge bg-red-50 text-red-600 !text-[11px] !py-0 !px-2" x-text="expiryState(m) === 'expired' ? 'Expired' : 'Out of stock'"></span>
+                      </div>
+                    </div>
+                    <span class="text-base font-bold text-brand-700 flex-shrink-0" x-text="peso(m.price)"></span>
+                  </button>
+                </template>
+
+              </li>
+            </template>
+          </ul>
+          <p x-show="results.length === 0" class="py-14 text-center text-sm text-gray-400">No products found.</p>
+        </section>
+
+        <!-- ═══ RIGHT: CART (bottom sheet on mobile) ═══ -->
+        <div class="fixed inset-0 bg-gray-900/50 z-40 xl:hidden" x-show="cartOpen" x-transition.opacity @click="cartOpen = false" style="display:none" aria-hidden="true"></div>
+
+        <aside id="cart" aria-label="Current sale"
+               class="cart-panel fixed inset-x-0 bottom-0 z-40 bg-white rounded-t-3xl shadow-2xl overflow-y-auto overscroll-contain max-h-[90dvh]
+                      xl:static xl:z-auto xl:rounded-2xl xl:shadow-card xl:sticky xl:top-[5.5rem] xl:max-h-[calc(100dvh-7rem)]"
+               :class="cartOpen ? 'translate-y-0' : 'translate-y-full xl:translate-y-0'">
+
+          <div class="cart-head sticky top-0 z-10 bg-white flex items-center justify-between px-5 py-4 border-b border-gray-100 rounded-t-3xl xl:rounded-t-2xl">
+            <h2 class="text-base font-bold text-gray-900">Current Sale <span class="text-gray-400 font-medium text-sm" x-text="'(' + itemCount + ')'"></span></h2>
+            <div class="flex items-center gap-1">
+              <button @click="clearCart()" x-show="cart.length" class="text-xs font-semibold text-red-500 hover:bg-red-50 px-2.5 py-2 rounded-lg min-h-[40px]">Clear</button>
+              <button @click="cartOpen = false" class="xl:hidden p-2 rounded-lg text-gray-400 hover:bg-gray-100" aria-label="Close cart">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="cart-list">
+            <div x-show="cart.length === 0" class="px-5 py-12 text-center">
+              <div class="w-14 h-14 rounded-2xl bg-brand-50 text-brand-500 flex items-center justify-center mx-auto mb-3">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+              </div>
+              <p class="text-sm font-semibold text-gray-700">Cart is empty</p>
+              <p class="text-xs text-gray-400 mt-1">Tap a product or scan a barcode to add it.</p>
+            </div>
+
+            <ul class="divide-y divide-gray-100" role="list">
+              <template x-for="l in lines" :key="l.m.id">
+                <li class="px-4 py-3">
+                  <div class="flex items-start gap-3">
+                    <div class="relative w-10 h-10 rounded-lg bg-brand-50 text-brand-600 text-xs font-bold flex items-center justify-center flex-shrink-0 overflow-hidden" aria-hidden="true">
+                      <img :src="l.m.img || 'assets/img/product.svg'" alt="" class="absolute inset-0 w-full h-full object-cover" @error="if (!$el.src.endsWith('product.svg')) $el.src = 'assets/img/product.svg'">
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-semibold text-gray-900 leading-snug">
+                        <span x-text="l.m.name"></span> <span class="text-gray-400 font-normal" x-text="l.m.variant"></span>
+                      </p>
+                      <p class="text-xs text-gray-400" x-text="peso(l.m.price) + ' / ' + l.m.unit"></p>
+                    </div>
+                    <button @click="remove(l.m.id)" class="p-1.5 -me-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50" :aria-label="'Remove ' + l.m.name">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                  </div>
+                  <div class="flex items-center justify-between mt-2 ps-[3.25rem]">
+                    <div class="flex items-center border border-gray-200 rounded-lg overflow-hidden">
+                      <button @click="dec(l.m.id)" class="w-7 h-7 text-sm flex items-center justify-center text-gray-600 hover:bg-gray-50" :aria-label="'Decrease ' + l.m.name">−</button>
+                      <input type="number" min="1" :max="l.m.stock" :value="l.qty" @change="setQty(l.m.id, $event.target.value); $event.target.value = qtyOf(l.m.id)"
+                             class="w-9 h-7 text-center text-xs font-semibold text-gray-800 border-x border-gray-200 outline-none focus:bg-brand-50" :aria-label="'Quantity of ' + l.m.name">
+                      <button @click="inc(l.m.id)" :disabled="l.qty >= l.m.stock" class="w-7 h-7 text-sm flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-30" :aria-label="'Increase ' + l.m.name">+</button>
+                    </div>
+                    <span class="text-sm font-bold text-gray-900" x-text="peso(l.total)"></span>
+                  </div>
+                </li>
+              </template>
+            </ul>
+          </div>
+
+          <div class="cart-foot sticky bottom-0 z-10 border-t border-gray-100 px-5 py-3.5 space-y-2.5 bg-white xl:rounded-b-2xl">
+            <div class="cart-detail">
+              <label for="cust-btn" class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Customer</label>
+              <div x-show="customer" style="display:none" class="flex items-center gap-2.5 rounded-xl border border-brand-200 bg-brand-50/50 ps-2.5 pe-1 py-1.5">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0" aria-hidden="true" x-text="custInitials(customer)"></div>
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-semibold text-gray-800 truncate" x-text="customer?.name"></p>
+                  <p class="text-xs text-gray-500 truncate" x-text="custTypeLabel(customer) + (customer?.idNo ? ' · ' + customer.idNo : '')"></p>
+                </div>
+                <button type="button" @click="clearCustomer()" class="p-2 rounded-lg text-gray-400 hover:bg-white hover:text-red-500 flex-shrink-0" :aria-label="'Remove customer ' + (customer?.name || '')">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              </div>
+              <button id="cust-btn" type="button" x-show="!customer" @click="toggleCustPicker()" :aria-expanded="custOpen.toString()" aria-controls="cust-panel"
+                      class="w-full flex items-center justify-between gap-2 text-start text-sm text-gray-500 bg-white border border-gray-200 hover:border-brand-400 rounded-xl px-3.5 min-h-[2.75rem] transition-colors">
+                <span class="flex items-center gap-2"><svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg> Walk-in · select a saved customer</span>
+                <svg class="w-4 h-4 text-gray-400 transition-transform" :class="custOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+              </button>
+              <div id="cust-panel" x-show="custOpen && !customer" style="display:none" class="mt-2 border border-gray-200 rounded-xl overflow-hidden" @keydown.escape.stop="custOpen = false">
+                <input type="search" x-ref="custSearch" x-model.debounce.150ms="custQuery" aria-label="Search customers" placeholder="Search name, phone or ID no.…"
+                       class="w-full px-3.5 py-2.5 text-sm bg-gray-50 border-b border-gray-200 placeholder:text-gray-400 focus:bg-white outline-none min-h-[2.75rem]">
+                <ul class="max-h-44 overflow-y-auto divide-y divide-gray-50" role="list">
+                  <template x-for="c in custResults" :key="c.id">
+                    <li>
+                      <button type="button" @click="pickCustomer(c)" class="w-full flex items-center justify-between gap-2 text-start px-3.5 py-2.5 hover:bg-brand-50/60 min-h-[2.75rem]">
+                        <span class="min-w-0">
+                          <span class="block text-sm font-medium text-gray-800 truncate" x-text="c.name"></span>
+                          <span class="block text-xs text-gray-400 truncate" x-text="c.idNo || c.phone || '—'"></span>
+                        </span>
+                        <span class="flex items-center gap-1.5 flex-shrink-0">
+                          <span x-show="c.allergies" title="Has recorded allergies" class="text-red-500 text-xs" aria-label="Has allergies">⚠</span>
+                          <span class="badge" :class="c.type === 'senior' ? 'bg-yellow-50 text-yellow-700' : (c.type === 'pwd' ? 'bg-teal-50 text-teal-700' : 'bg-gray-100 text-gray-600')" x-text="custTypeLabel(c)"></span>
+                        </span>
+                      </button>
+                    </li>
+                  </template>
+                  <li x-show="custResults.length === 0" class="px-3.5 py-4 text-center text-xs text-gray-400">No active customers found. <a href="customers.html" class="font-semibold text-brand-600 hover:text-brand-700">Add a customer</a></li>
+                </ul>
+              </div>
+              <p x-show="customer && customer.allergies" style="display:none" class="mt-2 flex items-start gap-1.5 rounded-lg bg-red-50 text-red-700 text-xs px-2.5 py-2" role="alert">
+                <svg class="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <span><strong>Allergy:</strong> <span x-text="customer?.allergies"></span></span>
+              </p>
+            </div>
+            <div>
+              <label for="disc" class="cart-detail block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Customer type</label>
+              <select id="disc" x-model="discount" :disabled="!!customer" :title="customer ? 'Remove the selected customer to change the type' : null" class="field cust-select min-h-[2.75rem] py-2 text-sm text-gray-700 disabled:opacity-60 disabled:cursor-not-allowed">
+                <option value="none">Regular customer</option>
+                <option value="senior">Senior Citizen — 20% off + VAT exempt</option>
+                <option value="pwd">PWD — 20% off + VAT exempt</option>
+              </select>
+            </div>
+            <dl class="text-sm space-y-1">
+              <div class="cart-detail flex justify-between text-gray-500"><dt>Subtotal (VAT incl.)</dt><dd x-text="peso(t.gross)"></dd></div>
+              <template x-if="discount === 'none'"><div class="cart-detail flex justify-between text-gray-500"><dt>of which VAT (12%)</dt><dd x-text="peso(t.vat)"></dd></div></template>
+              <template x-if="discount !== 'none'"><div class="cart-detail flex justify-between text-gray-500"><dt>Less: VAT exemption</dt><dd x-text="'−' + peso(t.vat)"></dd></div></template>
+              <template x-if="discount !== 'none'"><div class="flex justify-between text-brand-700 font-medium"><dt>Less: 20% discount</dt><dd x-text="'−' + peso(t.disc)"></dd></div></template>
+              <div class="flex justify-between items-baseline pt-2 border-t border-dashed border-gray-200">
+                <dt class="text-sm font-bold text-gray-900">Total</dt>
+                <dd class="text-xl font-bold text-brand-700" x-text="peso(t.total)"></dd>
+              </div>
+            </dl>
+            <button @click="openCheckout()" :disabled="!cart.length"
+                    class="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold shadow-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px]">
+              Charge <span x-text="peso(t.total)"></span>
+            </button>
+          </div>
+        </aside>
+      </div>
+    </main>
+
+    <!-- mobile cart bar -->
+    <div class="xl:hidden fixed inset-x-0 bottom-0 z-30 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-white via-white/95 to-transparent" x-show="!cartOpen" style="display:none">
+      <button @click="cartOpen = true" class="w-full flex items-center justify-between gap-3 bg-brand-600 text-white rounded-2xl px-4 py-3 shadow-lg min-h-[48px]" :aria-label="'View cart, ' + itemCount + ' items, total ' + peso(t.total)">
+        <span class="flex items-center gap-2 font-semibold">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+          View cart <span class="bg-white/20 rounded-full px-2 py-0.5 text-xs" x-text="itemCount"></span>
+        </span>
+        <span class="font-bold" x-text="peso(t.total)"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ CHECKOUT MODAL ════ -->
+<div id="modal-backdrop" class="pos-sheet" role="dialog" aria-modal="true" aria-labelledby="modal-title"
+     :class="{ open: modalOpen }" @keydown.escape="closeModal()"
+     @click="if ($event.target.id === 'modal-backdrop') closeModal()">
+  <div id="modal-dialog" x-ref="dialog" @keydown.tab="trapFocus($event)" style="width:min(100%,28rem)">
+    <div class="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-[1.25rem]">
+      <div>
+        <h2 id="modal-title" class="text-base font-bold text-gray-900" x-text="reviewing ? 'Order summary' : 'Checkout'"></h2>
+        <p class="text-xs text-gray-400 mt-0.5" x-text="reviewing ? 'Check everything before completing the sale.' : itemCount + ' item(s) · ' + receiptNo"></p>
+      </div>
+      <button type="button" @click="closeModal()" class="p-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close checkout">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <form x-show="!reviewing" @submit.prevent="review()" novalidate class="px-5 py-4 space-y-4">
+      <div class="flex items-baseline justify-between pb-3 border-b border-dashed border-gray-200 sm:pb-3 sm:border-b-0 sm:bg-brand-50 sm:rounded-xl sm:px-4 sm:py-3">
+        <span class="text-sm font-bold text-gray-900 sm:font-medium sm:text-brand-700">Amount due</span>
+        <span class="text-xl sm:text-2xl font-bold text-brand-700" x-text="peso(t.total)"></span>
+      </div>
+
+      <!-- Selected customer -->
+      <div x-show="customer" style="display:none" class="rounded-xl border border-gray-100 p-4 space-y-2">
+        <p class="text-[11px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider">Customer</p>
+        <p class="text-sm font-semibold text-gray-900"><span x-text="customer?.name"></span> <span class="text-xs font-medium text-gray-400" x-text="'· ' + custTypeLabel(customer)"></span></p>
+        <p x-show="customer && customer.allergies" class="flex items-start gap-1.5 rounded-lg bg-red-50 text-red-700 text-xs px-2.5 py-2" role="alert"><strong>⚠ Allergy:</strong> <span x-text="customer?.allergies"></span></p>
+      </div>
+
+      <!-- Senior / PWD ID -->
+      <div x-show="discount !== 'none'" class="space-y-3 border border-gray-100 rounded-xl p-4">
+        <p class="text-[11px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider" x-text="(discount === 'senior' ? 'Senior Citizen' : 'PWD') + ' details'"></p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="c-name" class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 sm:text-xs sm:text-gray-600 sm:normal-case sm:tracking-normal sm:mb-1.5">Full name <span class="text-red-500" aria-hidden="true">*</span></label>
+            <input id="c-name" class="field" :class="{ error: errors.cname }" x-model.trim="cust.name" :readonly="!!customer" autocomplete="off">
+          </div>
+          <div>
+            <label for="c-id" class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 sm:text-xs sm:text-gray-600 sm:normal-case sm:tracking-normal sm:mb-1.5">ID number <span class="text-red-500" aria-hidden="true">*</span></label>
+            <input id="c-id" class="field" :class="{ error: errors.cid }" x-model.trim="cust.id" :readonly="!!customer" autocomplete="off">
+          </div>
+        </div>
+        <p class="text-xs text-red-500" role="alert" x-show="errors.cname || errors.cid">Name and ID number are required for the discount.</p>
+      </div>
+
+      <!-- Payment -->
+      <div>
+        <p class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5 sm:text-xs sm:text-gray-600 sm:normal-case sm:tracking-normal sm:mb-2" id="pay-label">Payment method</p>
+        <div class="grid grid-cols-3 gap-2" role="radiogroup" aria-labelledby="pay-label">
+          <template x-for="p in methods" :key="p.key">
+            <button type="button" role="radio" :aria-checked="method === p.key" @click="method = p.key"
+                    class="pay-opt" :class="{ active: method === p.key }" x-text="p.label"></button>
+          </template>
+        </div>
+      </div>
+
+      <div x-show="method === 'cash'" class="space-y-3">
+        <div>
+          <label for="tender" class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 sm:text-xs sm:text-gray-600 sm:normal-case sm:tracking-normal sm:mb-1.5">Cash received (₱)</label>
+          <input id="tender" type="number" min="0" step="0.01" inputmode="decimal" class="field text-base font-semibold" :class="{ error: errors.tender }" x-model.number="tendered" placeholder="0.00">
+          <p class="mt-1 text-xs text-red-500" role="alert" x-show="errors.tender">Cash received is less than the amount due.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="chip" @click="tendered = t.total">Exact</button>
+          <template x-for="q in quickCash" :key="q"><button type="button" class="chip" @click="tendered = q" x-text="peso(q)"></button></template>
+        </div>
+        <div class="flex items-baseline justify-between pt-3 border-t border-dashed border-gray-200 sm:border-t-0 sm:bg-gray-50 sm:rounded-xl sm:px-4 sm:py-2.5">
+          <span class="text-sm font-bold text-gray-900 sm:font-normal sm:text-gray-500">Change</span>
+          <span class="text-lg font-bold" :class="change >= 0 ? 'text-brand-700' : 'text-gray-300'" x-text="change >= 0 ? peso(change) : '—'"></span>
+        </div>
+      </div>
+
+      <div x-show="method !== 'cash'">
+        <label for="ref" class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 sm:text-xs sm:text-gray-600 sm:normal-case sm:tracking-normal sm:mb-1.5" x-text="method === 'gcash' ? 'GCash reference no.' : 'Card approval code'"></label>
+        <input id="ref" class="field" :class="{ error: errors.ref }" x-model.trim="ref" autocomplete="off">
+        <p class="mt-1 text-xs text-red-500" role="alert" x-show="errors.ref">Reference number is required.</p>
+      </div>
+
+      <div class="flex items-center gap-3 pt-1">
+        <button type="button" @click="closeModal()" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 min-h-[44px]">Cancel</button>
+        <button type="submit" class="flex-1 py-2.5 rounded-xl text-sm font-bold bg-brand-600 text-white hover:bg-brand-700 shadow-sm min-h-[44px]">Review order</button>
+      </div>
+    </form>
+
+    <!-- ── ORDER SUMMARY (shown before the sale is completed) ── -->
+    <div x-show="reviewing" class="px-5 py-4 space-y-3.5">
+      <div>
+        <p class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1 sm:hidden">Items</p>
+        <div class="divide-y divide-gray-100 border-y border-gray-100 sm:border sm:rounded-xl">
+        <template x-for="l in lines" :key="l.m.id">
+          <div class="flex items-start justify-between gap-3 py-3 sm:px-4">
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-gray-900 truncate" x-text="l.m.name + ' ' + l.m.variant"></p>
+              <p class="text-xs text-gray-400" x-text="l.qty + ' × ' + peso(l.m.price)"></p>
+            </div>
+            <span class="text-sm font-semibold text-gray-900 flex-shrink-0" x-text="peso(l.total)"></span>
+          </div>
+        </template>
+        </div>
+      </div>
+
+      <dl class="space-y-1.5 text-sm">
+        <div class="flex justify-between"><dt class="text-gray-500">Subtotal (VAT incl.)</dt><dd class="text-gray-700" x-text="peso(t.gross)"></dd></div>
+        <div class="flex justify-between" x-show="discount === 'none'"><dt class="text-gray-500">of which VAT (12%)</dt><dd class="text-gray-700" x-text="peso(t.vat)"></dd></div>
+        <div class="flex justify-between" x-show="discount !== 'none'"><dt class="text-gray-500">VAT exemption</dt><dd class="text-gray-700" x-text="'−' + peso(t.vat)"></dd></div>
+        <div class="flex justify-between" x-show="discount !== 'none'"><dt class="text-gray-500">20% discount</dt><dd class="text-gray-700" x-text="'−' + peso(t.disc)"></dd></div>
+      </dl>
+
+      <div class="flex items-baseline justify-between pt-3 border-t border-dashed border-gray-200 sm:border-t-0 sm:bg-brand-50 sm:rounded-xl sm:px-4 sm:py-3">
+        <span class="text-sm font-bold text-gray-900 sm:font-medium sm:text-brand-700">Total</span>
+        <span class="text-xl sm:text-2xl font-bold text-brand-700" x-text="peso(t.total)"></span>
+      </div>
+
+      <dl class="space-y-1.5 text-sm border-t border-gray-100 pt-3">
+        <div class="flex justify-between"><dt class="text-gray-500">Payment</dt><dd class="font-semibold text-gray-800" x-text="methods.find(p => p.key === method).label"></dd></div>
+        <template x-if="method === 'cash'">
+          <div>
+            <div class="flex justify-between"><dt class="text-gray-500">Cash received</dt><dd class="text-gray-700" x-text="peso(round(tendered))"></dd></div>
+            <div class="flex justify-between mt-1.5"><dt class="text-gray-500">Change</dt><dd class="font-semibold text-brand-700" x-text="peso(round(tendered - round(t.total)))"></dd></div>
+          </div>
+        </template>
+        <div class="flex justify-between" x-show="method !== 'cash'"><dt class="text-gray-500">Reference</dt><dd class="text-gray-700" x-text="ref"></dd></div>
+        <div class="flex justify-between" x-show="discount !== 'none'"><dt class="text-gray-500" x-text="discount === 'senior' ? 'Senior citizen' : 'PWD'"></dt><dd class="text-gray-700 text-end" x-text="cust.name + ' · ' + cust.id"></dd></div>
+      </dl>
+
+      <div class="flex items-center gap-3 pt-1">
+        <button type="button" @click="reviewing = false" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 min-h-[44px]">Back</button>
+        <button type="button" x-ref="confirmSale" @click="confirmSale()" class="flex-1 py-2.5 rounded-xl text-sm font-bold bg-brand-600 text-white hover:bg-brand-700 shadow-sm min-h-[44px]">Confirm sale</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ RECEIPT ════ -->
+<div id="receipt-backdrop" role="dialog" aria-modal="true" aria-labelledby="receipt-title"
+     :class="{ open: sale }" @keydown.escape.window="sale && closeReceipt()"
+     @click="if ($event.target.id === 'receipt-backdrop') closeReceipt()">
+  <div id="receipt-dialog" x-show="sale" x-transition.opacity>
+    <div class="px-5 pt-5 pb-3 text-center no-print">
+      <div class="w-12 h-12 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center mx-auto mb-2">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+      </div>
+      <h2 id="receipt-title" class="text-lg font-bold text-gray-900">Sale completed</h2>
+      <p class="text-sm text-gray-500" x-show="sale && sale.method === 'cash'">Change due: <strong class="text-brand-700" x-text="sale ? peso(sale.change) : ''"></strong></p>
+    </div>
+
+    <div id="receipt" class="receipt" x-show="sale">
+      <template x-if="sale">
+        <div>
+          <p class="r-center r-bold r-lg" x-text="receiptCfg.title || receiptCfg.store"></p>
+          <p class="r-center whitespace-pre-line" x-show="receiptCfg.header" x-text="receiptCfg.header"></p>
+          <hr>
+          <p class="r-row"><span>Receipt</span><span x-text="sale.no"></span></p>
+          <p class="r-row"><span>Date</span><span x-text="sale.date"></span></p>
+          <p class="r-row"><span>Cashier</span><span>Maria Santos</span></p>
+          <template x-if="sale.customer"><p class="r-row"><span x-text="sale.customer.type"></span><span x-text="sale.customer.name + ' · ' + sale.customer.id"></span></p></template>
+          <hr>
+          <template x-for="l in sale.lines" :key="l.m.id">
+            <div class="r-item">
+              <p class="r-bold" x-text="l.m.brand + ' ' + l.m.strength"></p>
+              <p class="r-row"><span x-text="l.qty + ' x ' + peso(l.m.price)"></span><span x-text="peso(l.total)"></span></p>
+            </div>
+          </template>
+          <hr>
+          <p class="r-row"><span>Subtotal</span><span x-text="peso(sale.t.gross)"></span></p>
+          <template x-if="sale.discount === 'none'"><p class="r-row"><span>VAT (12%) incl.</span><span x-text="peso(sale.t.vat)"></span></p></template>
+          <template x-if="sale.discount !== 'none'"><div><p class="r-row"><span>VAT exemption</span><span x-text="'-' + peso(sale.t.vat)"></span></p><p class="r-row"><span>20% discount</span><span x-text="'-' + peso(sale.t.disc)"></span></p></div></template>
+          <p class="r-row r-bold r-lg"><span>TOTAL</span><span x-text="peso(sale.t.total)"></span></p>
+          <hr>
+          <p class="r-row"><span x-text="methods.find(p => p.key === sale.method).label"></span><span x-text="peso(sale.method === 'cash' ? sale.tendered : sale.t.total)"></span></p>
+          <p class="r-row" x-show="sale.method === 'cash'"><span>Change</span><span x-text="peso(sale.change)"></span></p>
+          <p class="r-row" x-show="sale.method !== 'cash'"><span>Ref</span><span x-text="sale.ref"></span></p>
+          <hr>
+          <p class="r-center whitespace-pre-line" x-text="receiptCfg.footer"></p>
+          <p class="r-center">Keep this receipt for returns.</p>
+        </div>
+      </template>
+    </div>
+
+    <div class="flex gap-3 px-5 py-4 no-print border-t border-gray-100">
+      <button @click="printReceipt()" :disabled="printing" class="flex-1 py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 min-h-[48px] flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+        <span x-text="printing ? 'Printing…' : (printerReady ? (printerCfg.mode === 'usb' ? 'Print (USB)' : 'Print (Bluetooth)') : 'Print')"></span>
+      </button>
+      <button x-ref="newSale" @click="closeReceipt()" class="flex-1 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold min-h-[48px]">New sale</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ POS SETTINGS (Bluetooth printing) ════ -->
+<div id="settings-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title"
+     :class="{ open: settingsOpen }" @keydown.escape="closeSettings()"
+     @click="if ($event.target.id === 'settings-backdrop') closeSettings()">
+  <div id="settings-dialog" x-ref="settingsDialog" @keydown.tab="trapSettingsFocus($event)">
+
+    <!-- header -->
+    <div class="flex items-center gap-2 px-5 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-[1.25rem]">
+      <button type="button" x-show="settingsView !== 'menu'" @click="settingsView = 'menu'"
+              class="p-2 -ms-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Back to settings">
+        <svg class="w-5 h-5 rtl:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      </button>
+      <div class="min-w-0 flex-1">
+        <h2 id="settings-title" class="text-lg font-bold text-gray-900" x-text="{ menu: 'Settings', receipt: 'Receipt settings', printer: 'Printer settings' }[settingsView]"></h2>
+        <p class="text-xs text-gray-400 mt-0.5" x-text="{ menu: 'Choose what you want to set up.', receipt: 'Personalize your receipt and preview how it prints.', printer: 'Connect a thermal printer for receipts.' }[settingsView]"></p>
+      </div>
+      <button type="button" @click="closeSettings()" class="p-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close settings">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- ── MENU ── -->
+    <div x-show="settingsView === 'menu'" class="px-5 py-4 grid gap-3">
+      <button type="button" @click="settingsView = 'receipt'" class="settings-opt">
+        <span class="settings-ico"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg></span>
+        <span class="min-w-0 text-start">
+          <span class="block text-sm font-semibold text-gray-900">Receipt settings</span>
+          <span class="block text-xs text-gray-500 mt-0.5">Title, header, footer and paper size</span>
+        </span>
+        <svg class="w-4 h-4 text-gray-300 ms-auto flex-shrink-0 rtl:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+      </button>
+      <button type="button" @click="settingsView = 'printer'" class="settings-opt">
+        <span class="settings-ico"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg></span>
+        <span class="min-w-0 text-start">
+          <span class="block text-sm font-semibold text-gray-900">Printer settings</span>
+          <span class="block text-xs text-gray-500 mt-0.5">Connect a Bluetooth or USB printer</span>
+        </span>
+        <span class="ms-auto flex items-center gap-2 flex-shrink-0">
+          <span class="badge !text-[11px] !py-0.5 !px-2"
+                :class="printerCfg.connecting ? 'bg-amber-50 text-amber-600' : (printerReady ? 'bg-brand-50 text-brand-700' : 'bg-red-50 text-red-600')"
+                x-text="printerCfg.connecting ? 'Connecting…' : (pConnected ? 'Connected' : (printerReady ? 'Ready' : (pName ? 'Reconnect' : 'Not connected')))"></span>
+          <svg class="w-4 h-4 text-gray-300 rtl:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </span>
+      </button>
+    </div>
+
+    <!-- ── RECEIPT ── -->
+    <div x-show="settingsView === 'receipt'" class="px-5 py-4">
+      <div class="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,15rem)]">
+        <div class="space-y-4">
+          <div>
+            <label for="rs-store" class="block text-xs font-semibold text-gray-500 mb-1">Store</label>
+            <select id="rs-store" class="field w-full" x-model="receiptCfg.store">
+              <option>TalipapaPOS Store</option>
+              <option>TalipapaPOS – Branch 2</option>
+            </select>
+          </div>
+          <div>
+            <label for="rs-title" class="block text-xs font-semibold text-gray-500 mb-1">Title</label>
+            <input id="rs-title" type="text" class="field w-full" x-model="receiptCfg.title" maxlength="40" placeholder="Shown at the top of the receipt">
+          </div>
+          <div>
+            <label for="rs-header" class="block text-xs font-semibold text-gray-500 mb-1">Header</label>
+            <textarea id="rs-header" rows="2" class="field w-full resize-none" x-model="receiptCfg.header" maxlength="120" placeholder="Address, TIN, contact number"></textarea>
+          </div>
+          <div>
+            <label for="rs-footer" class="block text-xs font-semibold text-gray-500 mb-1">Footer</label>
+            <textarea id="rs-footer" rows="2" class="field w-full resize-none" x-model="receiptCfg.footer" maxlength="120" placeholder="Thank-you note, return policy"></textarea>
+          </div>
+          <div>
+            <label for="rs-size" class="block text-xs font-semibold text-gray-500 mb-1">Printer size</label>
+            <select id="rs-size" class="field w-full" x-model="receiptCfg.size">
+              <option value="58">58mm</option>
+              <option value="80">80mm</option>
+            </select>
+          </div>
+          <div class="space-y-3 pt-1">
+            <div class="flex items-center justify-between gap-3">
+              <span id="rs-notes-l" class="text-sm text-gray-700">Include notes in receipt by default</span>
+              <button type="button" role="switch" class="switch" :aria-checked="receiptCfg.notes" aria-labelledby="rs-notes-l" @click="receiptCfg.notes = !receiptCfg.notes"><span></span></button>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <span id="rs-auto-l" class="text-sm text-gray-700">Print receipt automatically after each sale</span>
+              <button type="button" role="switch" class="switch" :aria-checked="receiptCfg.autoPrint" aria-labelledby="rs-auto-l" @click="receiptCfg.autoPrint = !receiptCfg.autoPrint"><span></span></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- live preview -->
+        <div>
+          <p class="text-xs font-semibold text-gray-500 mb-1 text-center">Preview</p>
+          <div class="receipt !mx-auto" :style="'max-width:' + (receiptCfg.size === '58' ? '13rem' : '15rem')" aria-label="Receipt preview">
+            <p class="r-center r-bold r-lg" x-text="receiptCfg.title || receiptCfg.store"></p>
+            <p class="r-center whitespace-pre-line" x-show="receiptCfg.header" x-text="receiptCfg.header"></p>
+            <hr>
+            <p class="r-row"><span>Receipt</span><span>R-0001</span></p>
+            <p class="r-row"><span>Cashier</span><span>Maria Santos</span></p>
+            <hr>
+            <p class="r-bold">Paracetamol 500mg</p>
+            <p class="r-row"><span>2 x ₱5</span><span>₱10</span></p>
+            <p class="r-bold">Vitamin C 500mg</p>
+            <p class="r-row"><span>1 x ₱8</span><span>₱8</span></p>
+            <p x-show="receiptCfg.notes" class="text-gray-500">Note: take after meals</p>
+            <hr>
+            <p class="r-row r-bold r-lg"><span>TOTAL</span><span>₱18</span></p>
+            <hr>
+            <p class="r-center whitespace-pre-line" x-text="receiptCfg.footer || ' '"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-3 pt-5">
+        <button type="button" @click="settingsView = 'menu'" class="px-5 py-3 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 min-h-[48px]">Back</button>
+        <button type="button" @click="saveReceiptSettings()" class="px-6 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold min-h-[48px]">Save</button>
+      </div>
+    </div>
+
+    <!-- ── PRINTER ── -->
+    <div x-show="settingsView === 'printer'" class="px-5 py-4 space-y-4">
+      <div class="flex gap-1 bg-gray-100 rounded-xl p-1" role="tablist" aria-label="Connection type">
+        <button type="button" role="tab" :aria-selected="printerCfg.mode === 'bluetooth'" @click="setMode('bluetooth')" class="conn-tab" :class="{ active: printerCfg.mode === 'bluetooth' }">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7l10 10-5 5V2l5 5L7 17"/></svg>
+          Bluetooth
+        </button>
+        <button type="button" role="tab" :aria-selected="printerCfg.mode === 'usb'" @click="setMode('usb')" class="conn-tab" :class="{ active: printerCfg.mode === 'usb' }">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Wired (USB)
+        </button>
+      </div>
+
+      <div class="rounded-xl border border-gray-100 bg-gray-50/60 p-4">
+        <div class="bg-white border border-gray-100 rounded-xl px-3 py-2">
+          <p class="text-[11px] text-gray-400">Status</p>
+          <p class="text-sm font-semibold flex items-center gap-2" :class="pConnected ? 'text-brand-600' : 'text-red-600'">
+            <span class="w-2 h-2 rounded-full" :class="pConnected ? 'bg-brand-500' : 'bg-red-500'"></span>
+            <span x-text="pConnected ? 'Connected' + (pName ? ' · ' + pName : '') : (pName ? (printerCfg.mode !== 'usb' && printerCfg.idle ? 'Ready · ' : 'Disconnected · ') + pName : 'Not connected')"></span>
+          </p>
+        </div>
+        <p class="text-sm text-red-600 text-center mt-3" x-show="printerCfg.mode === 'bluetooth' && !btSupported">Web Bluetooth isn’t supported here. Use Chrome on Android or desktop (not iPhone/Safari) over HTTPS. You can still use Print to go through the system print dialog.</p>
+        <p class="text-sm text-gray-500 text-center mt-3" x-show="printerCfg.mode === 'bluetooth' && btSupported">Turn on your printer, tap Scan printer, then choose it in the browser prompt. Works with BLE (ESC/POS) thermal printers.</p>
+        <p class="text-sm text-red-600 text-center mt-3" x-show="printerCfg.mode === 'usb' && !usbSupported">WebUSB isn’t supported here. Use Chrome or Edge (Android, Windows, Mac, Linux, ChromeOS) over HTTPS or localhost. Not available on iPhone/Safari or Firefox.</p>
+        <p class="text-sm text-gray-500 text-center mt-3" x-show="printerCfg.mode === 'usb' && usbSupported">Plug in the printer with its USB cable (on a phone, use an OTG adapter), turn it on, tap Scan printer, then pick it in the browser prompt. Prints raw ESC/POS directly, with no print dialog.</p>
+        <p class="text-xs text-gray-400 text-center mt-2" x-show="printerCfg.mode === 'usb' && usbSupported">Windows: if it says “Access denied” or “Unable to claim interface”, the printer is held by Windows’ own printer driver. Switch it to the WinUSB driver with the free Zadig tool, or use an Android phone, Mac, Linux or ChromeOS.</p>
+        <p class="text-xs text-red-600 text-center mt-2" x-show="printerCfg.error" x-text="printerCfg.error"></p>
+      </div>
+
+      <button type="button" @click="printerCfg.mode === 'usb' ? usbScan() : scanPrinter()" :disabled="printerCfg.mode === 'usb' ? !usbSupported : !btSupported" class="w-full py-3 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white text-sm font-bold min-h-[48px]" x-text="pConnected ? 'Scan another printer' : 'Scan printer'"></button>
+      <button type="button" @click="testPrint()"   :disabled="!printerReady || printing" class="w-full py-3 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:text-gray-400 disabled:cursor-not-allowed min-h-[48px]">Test print</button>
+      <button type="button" x-show="pConnected" @click="disconnectPrinter()" class="w-full py-2 text-sm font-semibold text-red-600">Disconnect</button>
+    </div>
+
+    <div class="h-1"></div>
+  </div>
+</div>
+
+<script>
+function posPage() {
+  return {
+    ...sharedChrome('pos.html'),
+
+    modalOpen: false, reviewing: false,
+
+    /* ── POS settings + Bluetooth ESC/POS printing ── */
+    settingsOpen: false, settingsView: 'menu',
+    receiptCfg: (() => { const d = { store: 'TalipapaPOS Store', title: 'TalipapaPOS Store', header: '123 Sample St., Manila\nTIN: 000-000-000-000', footer: 'Thank you! Come again.', size: '58', notes: false, autoPrint: true };
+      try { return { ...d, ...JSON.parse(localStorage.getItem('pp_receiptCfg') || '{}') }; } catch (e) { return d; } })(),
+    printerCfg: (() => { let n = ''; try { n = localStorage.getItem('pp_printerName') || ''; } catch (e) {} let m = 'bluetooth'; try { m = localStorage.getItem('pp_printerMode') === 'usb' ? 'usb' : 'bluetooth'; } catch (e) {} return { mode: m, connected: false, idle: false, connecting: false, name: n, error: '' }; })(),
+    btSupported: typeof navigator !== 'undefined' && !!navigator.bluetooth,
+    /* When opened through app.html, the Bluetooth link is owned by the outer shell page, which never reloads,
+       so the printer stays connected while you browse Sales, Products, etc. */
+    get _framed() { try { return window.parent !== window && !!window.parent.ppBT; } catch (e) { return false; } },
+    get _nb() { return this._framed ? window.parent.navigator.bluetooth : navigator.bluetooth; },
+    printing: false, _btDev: null, _btChar: null, _idleT: null, _rcT: null, _intentional: false, _leaving: false,
+    get printerReady() { return this.printerCfg.mode === 'usb' ? this.usb.connected : (this.printerCfg.connected || this.printerCfg.idle); },
+    get pConnected() { return this.printerCfg.mode === 'usb' ? this.usb.connected : this.printerCfg.connected; },
+    get pName() { return this.printerCfg.mode === 'usb' ? this.usb.name : this.printerCfg.name; },
+    setMode(m) { this.printerCfg.mode = m; this.printerCfg.error = ''; try { localStorage.setItem('pp_printerMode', m); } catch (e) {} if (m === 'usb' && this.usbSupported && !this.usb.connected && this.usb.name) this.usbReconnect(false); },
+
+    /* ---- USB (WebUSB, raw ESC/POS to the printer's bulk-out endpoint) ---- */
+    usb: (() => { let n = ''; try { n = localStorage.getItem('pp_usbName') || ''; } catch (e) {} return { dev: null, iface: null, ep: null, connected: false, name: n }; })(),
+    get usbSupported() { return typeof navigator !== 'undefined' && !!navigator.usb; },
+    async usbScan() {
+      this.printerCfg.error = '';
+      try {
+        const dev = await navigator.usb.requestDevice({ filters: [] });
+        this.printerCfg.connecting = true;
+        await this.usbOpen(dev);
+        this.showToast('Connected to ' + this.usb.name);
+      } catch (e) {
+        if (e && e.name === 'NotFoundError') return;        // user cancelled
+        this.printerCfg.error = 'Could not connect: ' + (e.message || e) + (/claim|denied|Access/i.test(String(e.message || e)) ? ' — the OS printer driver is holding the printer (see the Windows note above).' : '');
+      } finally { this.printerCfg.connecting = false; }
+    },
+    async usbOpen(dev) {
+      if (!dev.opened) await dev.open();
+      if (dev.configuration === null) await dev.selectConfiguration(1);
+      let best = null;
+      for (const itf of dev.configuration.interfaces) for (const alt of itf.alternates) {
+        const ep = alt.endpoints.find(e => e.direction === 'out' && e.type === 'bulk');
+        if (!ep) continue;
+        const rank = alt.interfaceClass === 7 ? 0 : (alt.interfaceClass === 255 ? 1 : 2);      // printer class first, then vendor-specific
+        if (!best || rank < best.rank) best = { rank, num: itf.interfaceNumber, alt: alt.alternateSetting, ep: ep.endpointNumber };
+      }
+      if (!best) { try { await dev.close(); } catch (x) {} throw new Error('No printer (bulk-out) interface found on this device'); }
+      await dev.claimInterface(best.num);
+      if (best.alt) await dev.selectAlternateInterface(best.num, best.alt);
+      this.usb = { dev, iface: best.num, ep: best.ep, connected: true, name: dev.productName || ('USB printer ' + dev.vendorId.toString(16) + ':' + dev.productId.toString(16)) };
+      try { localStorage.setItem('pp_usbName', this.usb.name); localStorage.setItem('pp_usbId', dev.vendorId + ':' + dev.productId); } catch (e) {}
+      if (!this._usbEvt) {
+        this._usbEvt = true;
+        navigator.usb.addEventListener('disconnect', e => { if (this.usb.dev && e.device === this.usb.dev) { this.usb.connected = false; this.usb.dev = null; } });      // cable pulled
+        navigator.usb.addEventListener('connect', () => { if (!this.usb.connected && this.printerCfg.mode === 'usb' && this.usb.name) this.usbReconnect(false); });     // plugged back in
+      }
+    },
+    async usbReconnect(manual) {
+      if (!this.usbSupported || this.printerCfg.connecting) return false;
+      if (this.usb.connected && this.usb.dev && this.usb.dev.opened) return true;
+      this.printerCfg.connecting = true; this.printerCfg.error = '';
+      try {
+        let id = ''; try { id = localStorage.getItem('pp_usbId') || ''; } catch (e) {}
+        const dev = (await navigator.usb.getDevices()).find(d => (d.vendorId + ':' + d.productId) === id);   // remembered device (no prompt needed)
+        if (dev) { await this.usbOpen(dev); if (manual) this.showToast('Printer connected'); return true; }
+      } catch (e) { this.printerCfg.error = 'USB reconnect failed: ' + (e.message || e); }
+      finally { this.printerCfg.connecting = false; }
+      if (manual) { await this.usbScan(); return this.usb.connected; }      // not remembered / unplugged: show chooser (needs the tap)
+      return false;
+    },
+    async usbDisconnect() {
+      const u = this.usb;
+      try { if (u.dev) { await u.dev.releaseInterface(u.iface); await u.dev.close(); } } catch (e) {}
+      this.usb = { ...this.usb, dev: null, connected: false };
+    },
+    async usbWrite(bytes) {
+      const u = this.usb, CH = 4096;
+      const guard = p => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Printer not responding (is it on, with paper loaded?)')), 8000))]);
+      for (let i = 0; i < bytes.length; i += CH) {
+        const r = await guard(u.dev.transferOut(u.ep, bytes.slice(i, i + CH)));
+        if (r.status === 'stall') { await u.dev.clearHalt('out', u.ep); throw new Error('Printer stalled'); }
+      }
+    },
+    async printViaUsb(sale) {
+      let err;
+      for (let i = 0; i < 2; i++) {
+        try {
+          if (!(this.usb.connected && this.usb.dev && this.usb.dev.opened)) { if (!(await this.usbReconnect(true))) throw new Error('USB printer not connected'); }
+          await this.usbWrite(this.escposBytes(sale));
+          return;
+        } catch (e) { err = e; this.usb.connected = false; try { await this.usbDisconnect(); } catch (x) {} await new Promise(r => setTimeout(r, 500)); }
+      }
+      throw err;
+    },
+    openSettings() {
+      this.lastFocus = document.activeElement;
+      this.settingsView = 'menu'; this.settingsOpen = true;
+      document.body.style.overflow = 'hidden';
+      this.$nextTick(() => { const b = this.$refs.settingsDialog.querySelector('.settings-opt'); if (b) b.focus(); });
+    },
+    closeSettings() {
+      this.settingsOpen = false;
+      document.body.style.overflow = '';
+      if (this.lastFocus) this.lastFocus.focus();
+    },
+    trapSettingsFocus(e) {
+      const f = [...this.$refs.settingsDialog.querySelectorAll('button, input, select, textarea')]
+        .filter(el => !el.disabled && el.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    },
+    saveReceiptSettings() {
+      try { localStorage.setItem('pp_receiptCfg', JSON.stringify(this.receiptCfg)); } catch (e) {}
+      this.showToast('Receipt settings saved');
+    },
+
+    /* ---- Bluetooth (Web Bluetooth, BLE ESC/POS thermal printers) ---- */
+    BT_SERVICES: ['000018f0-0000-1000-8000-00805f9b34fb', '0000ff00-0000-1000-8000-00805f9b34fb', '0000ffe0-0000-1000-8000-00805f9b34fb',
+      '0000fee7-0000-1000-8000-00805f9b34fb', 'e7810a71-73ae-499d-8c15-faa9aef0c3f2', '49535343-fe7d-4ae5-8fa9-9fafd205e455'],
+    async scanPrinter() {
+      this.printerCfg.error = '';
+      try {
+        const dev = await this._nb.requestDevice({ acceptAllDevices: true, optionalServices: this.BT_SERVICES });
+        await this.btConnect(dev);
+        this.showToast('Connected to ' + (dev.name || 'printer'));
+      } catch (e) {
+        if (e && e.name === 'NotFoundError') return;          // user cancelled
+        this.printerCfg.error = 'Could not connect: ' + (e.message || e);
+      }
+    },
+    async btConnect(dev) {
+      const server = await dev.gatt.connect();
+      let ch = null;
+      for (const svc of await server.getPrimaryServices()) {
+        for (const c of await svc.getCharacteristics()) {
+          if (c.properties.write || c.properties.writeWithoutResponse) { ch = c; break; }
+        }
+        if (ch) break;
+      }
+      if (!ch) { dev.gatt.disconnect(); throw new Error('No writable printer channel found. This printer may be Bluetooth Classic (not supported by browsers).'); }
+      this._btDev = dev; this._btChar = ch;
+      this.printerCfg.connected = true; this.printerCfg.idle = false; this.printerCfg.name = dev.name || 'Bluetooth printer';
+      try { localStorage.setItem('pp_printerName', this.printerCfg.name); localStorage.setItem('pp_printerId', dev.id || ''); } catch (e) {}
+      if (this._framed) { window.parent.ppBT.dev = dev; window.parent.ppBT.ch = ch; }
+      if (dev._ppL) { try { dev.removeEventListener('gattserverdisconnected', dev._ppL); } catch (e) {} }
+      { dev._ppL = () => { this.printerCfg.connected = false; this._btChar = null; if (this._btDev === dev && !this._intentional && !this._leaving) this.scheduleReconnect(); }; dev.addEventListener('gattserverdisconnected', dev._ppL); this._ppDev = dev; }
+    },
+    /* ---- reconnect after reload / sleep ---- */
+    async reconnectPrinter(manual) {
+      if (this.printerCfg.mode === 'usb') return this.usbReconnect(manual);
+      if (!this.btSupported || this.printerCfg.connecting) return false;
+      this.printerCfg.connecting = true; this.printerCfg.error = '';
+      try {
+        let dev = this._btDev;
+        if (!dev && this._nb.getDevices) {
+          let id = ''; try { id = localStorage.getItem('pp_printerId') || ''; } catch (e) {}
+          const list = await this._nb.getDevices();
+          dev = list.find(d => d.id === id) || list.find(d => d.name === this.printerCfg.name) || null;
+        }
+        if (!dev) { if (manual) await this.scanPrinter(); return this.printerCfg.connected; }   // no remembered device -> chooser
+        await Promise.race([this.btConnect(dev), new Promise((_, rej) => setTimeout(() => rej(new Error('Printer not found nearby. Is it on?')), 8000))]);
+        if (manual) this.showToast('Printer connected');
+        return true;
+      } catch (e) {
+        if (manual) this.showToast('Reconnect failed: ' + (e.message || e));
+        return false;
+      } finally { this.printerCfg.connecting = false; }
+    },
+    autoReconnect() {
+      if (this.usbSupported && this.usb.name) this.usbReconnect(false);      // USB: reopen the remembered printer on page load
+      if (this.printerCfg.mode === 'usb') return;
+      /* Web Bluetooth links die when the page unloads. Disconnect cleanly so the printer is free to re-advertise. */
+      window.addEventListener('pagehide', () => { this._leaving = true; clearTimeout(this._rcT); if (this._ppDev && this._ppDev._ppL) { try { this._ppDev.removeEventListener('gattserverdisconnected', this._ppDev._ppL); } catch (e) {} } if (this._framed) return; try { if (this._btDev && this._btDev.gatt.connected) this._btDev.gatt.disconnect(); } catch (e) {} });
+      window.addEventListener('pageshow', e => { if (e.persisted) { this._leaving = false; if (this.printerCfg.name) this.reconnectPrinter(false); } });
+      if (this._framed && window.parent.ppBT.dev && window.parent.ppBT.dev.gatt.connected && window.parent.ppBT.ch) {   // still connected from the previous page
+        const d = window.parent.ppBT.dev;
+        this._btDev = d; this._btChar = window.parent.ppBT.ch; this.printerCfg.connected = true; this.printerCfg.name = d.name || this.printerCfg.name || 'Bluetooth printer';
+        if (d._ppL) { try { d.removeEventListener('gattserverdisconnected', d._ppL); } catch (e) {} }
+        d._ppL = () => { this.printerCfg.connected = false; this._btChar = null; if (this._btDev === d && !this._intentional && !this._leaving) this.scheduleReconnect(); };
+        d.addEventListener('gattserverdisconnected', d._ppL); this._ppDev = d;
+      }
+      if (!this.btSupported || !this.printerCfg.name) return;
+      if (!this._nb.getDevices) this.printerCfg.error = 'This browser cannot remember the printer between pages. Enable chrome://flags/#enable-web-bluetooth-new-permissions-backend and relaunch Chrome so it reconnects automatically. Without it, pick the printer again when you press Print.';
+      (async () => { for (let i = 0; i < 4; i++) { if (this._leaving) return; if (await this.reconnectPrinter(false)) { this.scheduleRelease(); return; } await new Promise(r => setTimeout(r, 1500 * (i + 1))); } })();   // retry: printer needs a moment to re-advertise after the previous page
+      document.addEventListener('visibilitychange', () => { if (!document.hidden && !this.printerReady) this.reconnectPrinter(false); });
+      setInterval(() => { if (this._btDev && !this._btDev.gatt.connected && this.printerCfg.connected) this.printerCfg.connected = false; }, 5000);   // connection check
+    },
+    async btEnsure() {
+      if (this._btChar && this._btDev && this._btDev.gatt.connected) return;
+      if (await this.reconnectPrinter(true)) return;   // called from a click: may show the browser chooser once if the printer isn't remembered
+      throw new Error('Printer not connected');
+    },
+    disconnectPrinter() { if (this.printerCfg.mode === 'usb') { this.usbDisconnect(); return; } if (this._btDev && this._btDev.gatt.connected) this._btDev.gatt.disconnect(); this.printerCfg.connected = false; },
+    async btWrite(bytes) {
+      /* Small chunks + a pause between them so the printer's tiny buffer never overflows (long receipts used to stall it),
+         and a timeout on every write so the button can never get stuck on "Printing…". */
+      const ch = this._btChar, noResp = !ch.properties.write && ch.properties.writeWithoutResponse, CH = 20, GAP = noResp ? 40 : 20;
+      const guard = p => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Printer not responding')), 8000))]);
+      for (let i = 0; i < bytes.length; i += CH) {
+        const part = bytes.slice(i, i + CH);
+        if (noResp) await guard(ch.writeValueWithoutResponse(part));
+        else await guard(ch.writeValue(part));
+        await new Promise(r => setTimeout(r, GAP));
+      }
+    },
+
+    /* ---- ESC/POS receipt builder ---- */
+    escposBytes(sale) {
+      const W = this.receiptCfg.size === '80' ? 48 : 32, enc = new TextEncoder(), out = [];
+      const clean = t => String(t).replace(/₱/g, 'P').replace(/[^\x20-\x7E]/g, c => (c === '·' ? '-' : '?'));
+      const raw = (...b) => out.push(Uint8Array.from(b));
+      const txt = t => out.push(enc.encode(clean(t) + '\n'));
+      const pesoP = n => clean(this.peso(n));
+      const center = t => String(t).split('\n').forEach(l => txt(l)), 
+            line = () => txt('-'.repeat(W)),
+            row = (a, b) => { a = clean(a); b = clean(b); const sp = Math.max(1, W - a.length - b.length); txt(a.length + b.length + 1 > W ? a.slice(0, W - b.length - 1) + ' ' + b : a + ' '.repeat(sp) + b); };
+      raw(0x1B, 0x40);                                    // init
+      raw(0x1B, 0x61, 1); raw(0x1B, 0x45, 1); raw(0x1D, 0x21, 0x01);
+      txt(this.receiptCfg.title || this.receiptCfg.store);
+      raw(0x1D, 0x21, 0x00); raw(0x1B, 0x45, 0);
+      if (this.receiptCfg.header) center(this.receiptCfg.header);
+      raw(0x1B, 0x61, 0); line();
+      if (sale.test) { raw(0x1B, 0x61, 1); txt('*** TEST PRINT ***'); txt('Printer is working!'); raw(0x1B, 0x61, 0); }
+      else {
+        row('Receipt', sale.no); row('Date', sale.date); row('Cashier', sale.cashier || 'Maria Santos');
+        if (sale.customer) row(sale.customer.type, sale.customer.name + ' ' + sale.customer.id);
+        line();
+        sale.lines.forEach(l => { txt(l.m.brand + ' ' + l.m.strength); row('  ' + l.qty + ' x ' + pesoP(l.m.price), pesoP(l.total)); });
+        line();
+        row('Subtotal', pesoP(sale.t.gross));
+        if (sale.discount === 'none') row('VAT (12%) incl.', pesoP(sale.t.vat));
+        else { row('VAT exemption', '-' + pesoP(sale.t.vat)); row('20% discount', '-' + pesoP(sale.t.disc)); }
+        raw(0x1B, 0x45, 1); row('TOTAL', pesoP(sale.t.total)); raw(0x1B, 0x45, 0);
+        line();
+        row(this.methods.find(p => p.key === sale.method).label, pesoP(sale.method === 'cash' ? sale.tendered : sale.t.total));
+        if (sale.method === 'cash') row('Change', pesoP(sale.change)); else row('Ref', sale.ref);
+        line();
+        raw(0x1B, 0x61, 1);
+        if (this.receiptCfg.footer) center(this.receiptCfg.footer);
+        txt('Keep this receipt for returns.'); raw(0x1B, 0x61, 0);
+      }
+      txt(''); txt(''); txt(''); raw(0x1D, 0x56, 0x42, 0x00);   // feed + partial cut (ignored if no cutter)
+      const len = out.reduce((n, a) => n + a.length, 0), buf = new Uint8Array(len); let o = 0;
+      out.forEach(a => { buf.set(a, o); o += a.length; });
+      return buf;
+    },
+    async printViaBluetooth(sale) {
+      clearTimeout(this._idleT);
+      let err;
+      for (let i = 0; i < 3; i++) {                       // connect (retry) then write
+        try {
+          await this.btEnsure();
+          await this.btWrite(this.escposBytes(sale));
+          this.scheduleRelease();
+          return;
+        } catch (e) {
+          err = e; this.printerCfg.connected = false; this._btChar = null;
+          try { if (this._btDev && this._btDev.gatt.connected) this._btDev.gatt.disconnect(); } catch (x) {}
+          await new Promise(r => setTimeout(r, 1500));
+        }
+      }
+      throw err;
+    },
+    /* Keep the link open while you are on the POS page (the old 4-second auto-disconnect is removed).
+       If the link drops by itself, reconnect quietly; printing also reconnects on demand. */
+    scheduleRelease() { clearTimeout(this._idleT); },
+    scheduleReconnect() {
+      clearTimeout(this._rcT);
+      this.printerCfg.idle = true;                       // still 'ready': reconnects on next print
+      this._rcT = setTimeout(() => {
+        if (!this._leaving && !this.printing && !(this._btDev && this._btDev.gatt.connected)) this.reconnectPrinter(false);
+      }, 1500);
+    },
+    async printReceipt() {
+      if (!this.sale) return;
+      const usbMode = this.printerCfg.mode === 'usb';
+      if (usbMode ? (!this.usbSupported || (!this.usb.connected && !this.usb.name)) : (!this.printerCfg.connected && !this._btDev && !this.printerCfg.name)) { window.print(); return; }   // no printer set up -> system print dialog
+      this.printing = true;
+      try { await (usbMode ? this.printViaUsb(this.sale) : this.printViaBluetooth(this.sale)); this.showToast('Receipt sent to printer'); }
+      catch (e) { this.showToast((usbMode ? 'USB' : 'Bluetooth') + ' print failed (' + (e.message || e) + '). Opening print dialog…'); setTimeout(() => window.print(), 600); }
+      finally { this.printing = false; }
+    },
+    async testPrint() {
+      this.printing = true; this.printerCfg.error = '';
+      try { await (this.printerCfg.mode === 'usb' ? this.printViaUsb({ test: true }) : this.printViaBluetooth({ test: true })); }
+      catch (e) { this.printerCfg.error = 'Test print failed: ' + (e.message || e); }
+      finally { this.printing = false; }
+    },
+
+    items: ppProducts(),
+    categories: ['Beverages', 'Snacks', 'Canned & Instant', 'Pantry', 'Household', 'Personal Care', 'Fresh & Frozen', 'School & Office'],
+    methods: [{ key: 'cash', label: 'Cash' }, { key: 'gcash', label: 'GCash' }, { key: 'card', label: 'Card' }],
+
+    /* ── helpers ── */
+    peso(n) { return '₱' + Number(n).toLocaleString('en-PH', { minimumFractionDigits: Math.round(n * 100) % 100 ? 2 : 0, maximumFractionDigits: 2 }); },
+    daysLeft(m) { return m.expiry ? Math.ceil((new Date(m.expiry + 'T00:00:00') - new Date(new Date().toDateString())) / 86400000) : null; },
+    expiryState(m) { if (!m.expiry) return 'ok'; const d = this.daysLeft(m); return d < 0 ? 'expired' : (d <= 30 ? 'soon' : 'ok'); },
+    sellable(m) { return m.stock > 0 && this.expiryState(m) !== 'expired'; },
+
+    /* ── product list ── */
+    query: '', category: '', cartOpen: false,
+
+    /* ── layout switcher (remembered in this browser) ── */
+    views: [
+      { key: 'large', label: 'Large', icon: '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5" stroke-width="2"/><rect x="13" y="3" width="8" height="8" rx="1.5" stroke-width="2"/><rect x="3" y="13" width="8" height="8" rx="1.5" stroke-width="2"/><rect x="13" y="13" width="8" height="8" rx="1.5" stroke-width="2"/></svg>' },
+      { key: 'grid',  label: 'Grid',  icon: '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="4.5" height="4.5" rx="1" stroke-width="2"/><rect x="9.75" y="3" width="4.5" height="4.5" rx="1" stroke-width="2"/><rect x="16.5" y="3" width="4.5" height="4.5" rx="1" stroke-width="2"/><rect x="3" y="9.75" width="4.5" height="4.5" rx="1" stroke-width="2"/><rect x="9.75" y="9.75" width="4.5" height="4.5" rx="1" stroke-width="2"/><rect x="16.5" y="9.75" width="4.5" height="4.5" rx="1" stroke-width="2"/><rect x="3" y="16.5" width="4.5" height="4.5" rx="1" stroke-width="2"/><rect x="9.75" y="16.5" width="4.5" height="4.5" rx="1" stroke-width="2"/><rect x="16.5" y="16.5" width="4.5" height="4.5" rx="1" stroke-width="2"/></svg>' },
+      { key: 'list',  label: 'List',  icon: '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="2" d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>' },
+    ],
+    view: 'grid',
+    initView() {
+      const pre = 'R-' + ppDate().replace(/-/g, '') + '-';
+      this.seq = Math.max(0, ...ppSales.load().filter(s => s.no.startsWith(pre)).map(s => parseInt(s.no.slice(pre.length), 10) || 0)) + 1;
+      try { const v = localStorage.getItem('pp-pos-view'); if (v && this.views.some(x => x.key === v)) this.view = v; } catch (e) {} },
+    setView(v) { this.view = v; try { localStorage.setItem('pp-pos-view', v); } catch (e) {} },
+    get gridClass() {
+      return { large: 'grid-cols-2 sm:grid-cols-3',
+               grid:  'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 2xl:grid-cols-5',
+               list:  'grid-cols-1 lg:grid-cols-2' }[this.view];
+    },
+    get results() {
+      const q = this.query.trim().toLowerCase();
+      return this.items
+        .filter(m => (!this.category || m.category === this.category) &&
+                     (!q || (m.name + ' ' + m.brand + ' ' + m.sku).toLowerCase().includes(q)))
+        .sort((a, b) => (this.sellable(b) - this.sellable(a)) || a.name.localeCompare(b.name));
+    },
+    enterSearch(raw) {         // barcode scanners "type" the code then press Enter — read the live value, not the debounced one
+      this.query = raw;
+      const q = raw.trim().toLowerCase();
+      if (!q) return;
+      const exact = this.items.find(m => m.sku.toLowerCase() === q);
+      const hit = exact || (this.items.filter(m => (m.name + ' ' + m.brand + ' ' + m.sku).toLowerCase().includes(q)).length === 1 ? this.items.find(m => (m.name + ' ' + m.brand + ' ' + m.sku).toLowerCase().includes(q)) : null);
+      if (hit) { this.add(hit); this.query = ''; }
+      else this.showToast(this.items.some(m => (m.name + ' ' + m.brand + ' ' + m.sku).toLowerCase().includes(q)) ? 'Pick a product from the list.' : 'No match for "' + raw + '".');
+    },
+
+    /* ── cart ── */
+    cart: [],                  // [{ id, qty }]
+    med(id) { return this.items.find(m => m.id === id); },
+    inCart(id) { const l = this.cart.find(c => c.id === id); return l ? l.qty : 0; },
+    qtyOf(id) { return this.inCart(id) || 1; },
+    get lines() { return this.cart.map(c => { const m = this.med(c.id); return { m, qty: c.qty, total: m.price * c.qty }; }); },
+    get itemCount() { return this.cart.reduce((n, c) => n + c.qty, 0); },
+    add(m) {
+      if (!this.sellable(m)) return;
+      const l = this.cart.find(c => c.id === m.id);
+      if (l) { if (l.qty >= m.stock) return this.showToast('Only ' + m.stock + ' ' + m.unit + ' of ' + m.name + ' in stock.'); l.qty++; }
+      else this.cart.push({ id: m.id, qty: 1 });
+    },
+    inc(id) { this.add(this.med(id)); },
+    dec(id) { const l = this.cart.find(c => c.id === id); if (!l) return; if (--l.qty < 1) this.remove(id); },
+    setQty(id, v) {
+      const m = this.med(id), l = this.cart.find(c => c.id === id); if (!l) return;
+      let n = Math.floor(Number(v)); if (!n || n < 1) n = 1;
+      if (n > m.stock) { n = m.stock; this.showToast('Only ' + m.stock + ' ' + m.unit + ' of ' + m.name + ' in stock.'); }
+      l.qty = n;
+    },
+    remove(id) { this.cart = this.cart.filter(c => c.id !== id); if (!this.cart.length) this.cartOpen = false; },
+    clearCart() { this.cart = []; this.cartOpen = false; },
+
+    /* ── customers (picked from the Customers page) ── */
+    customers: ppCustomers.load().filter(c => c.active),
+    customer: null, custOpen: false, custQuery: '',
+    custTypeLabel(c) { return !c ? '' : ({ senior: 'Senior citizen', pwd: 'PWD' }[c.type] || 'Regular'); },
+    custInitials(c) { return c ? String(c.name).split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') : ''; },
+    get custResults() {
+      const q = this.custQuery.trim().toLowerCase();
+      return this.customers.filter(c => !q || [c.name, c.phone, c.idNo, c.id].join(' ').toLowerCase().includes(q))
+        .sort((a, b) => a.name.localeCompare(b.name)).slice(0, 30);
+    },
+    toggleCustPicker() {
+      this.custOpen = !this.custOpen;
+      if (this.custOpen) {
+        this.customers = ppCustomers.load().filter(c => c.active);   // pick up customers added on the Customers page
+        this.custQuery = '';
+        this.$nextTick(() => this.$refs.custSearch && this.$refs.custSearch.focus());
+      }
+    },
+    pickCustomer(c) {
+      this.customer = c;
+      this.discount = c.type === 'senior' ? 'senior' : (c.type === 'pwd' ? 'pwd' : 'none');
+      this.cust = { name: c.name, id: c.idNo || '' };
+      this.custOpen = false; this.custQuery = '';
+      this.showToast(c.name + ' selected' + (c.type !== 'regular' ? ' — ' + this.custTypeLabel(c) + ' discount applied' : '') + (c.allergies ? ' · Allergy: ' + c.allergies : ''));
+    },
+    clearCustomer() {
+      this.customer = null; this.discount = 'none'; this.cust = { name: '', id: '' };
+      this.$nextTick(() => { const b = document.getElementById('cust-btn'); if (b) b.focus(); });
+    },
+
+    /* ── totals — prices are VAT-inclusive (12%).
+          Senior/PWD: VAT-exempt (price ÷ 1.12) then 20% off that base. ── */
+    discount: 'none',
+    get t() {
+      const gross = this.lines.reduce((s, l) => s + l.total, 0);
+      const base = gross / 1.12, vat = gross - base;
+      if (this.discount === 'none') return { gross, vat, disc: 0, total: gross };
+      const disc = base * 0.20;
+      return { gross, vat, disc, total: base - disc };
+    },
+
+    /* ── checkout ── */
+    method: 'cash', tendered: '', ref: '', errors: {},
+    cust: { name: '', id: '' },
+    get change() { return this.method === 'cash' && this.tendered !== '' ? this.round(this.tendered - this.round(this.t.total)) : -1; },
+    get quickCash() {
+      const due = Math.ceil(this.t.total), set = new Set();
+      [20, 50, 100, 500, 1000].forEach(d => { const v = Math.ceil(due / d) * d; if (v >= due) set.add(v); });
+      return [...set].sort((a, b) => a - b).slice(0, 4);
+    },
+    round(n) { return Math.round(n * 100) / 100; },
+    openCheckout() {
+      if (!this.cart.length) return;
+      this.errors = {}; this.method = 'cash'; this.tendered = ''; this.ref = ''; this.reviewing = false;
+      this.cartOpen = false;
+      this.openModalCommon();
+    },
+    review() {
+      const e = {};
+      if (this.discount !== 'none') { if (!this.cust.name) e.cname = 1; if (!this.cust.id) e.cid = 1; }
+      if (this.method === 'cash') { if (this.tendered === '' || this.round(this.tendered) < this.round(this.t.total)) e.tender = 1; }
+      else if (!this.ref) e.ref = 1;
+      this.errors = e;
+      if (Object.keys(e).length) return;
+      this.reviewing = true;                       // show the summary first
+      this.$nextTick(() => { this.$refs.dialog.scrollTop = 0; this.$refs.confirmSale && this.$refs.confirmSale.focus(); });
+    },
+    confirmSale() {
+      const total = this.round(this.t.total);
+      const now = new Date();
+      const sale = {
+        no: this.receiptNo, ts: now.toISOString(), date: now.toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }),
+        cashier: ppCashier(), status: 'completed',
+        lines: this.lines.map(l => ({ m: { id: l.m.id, name: l.m.name, variant: l.m.variant, brand: l.m.name, strength: l.m.variant, generic: l.m.brand || '', rx: false, price: l.m.price }, qty: l.qty, total: l.total })),
+        t: { ...this.t, total }, discount: this.discount,
+        method: this.method, tendered: this.method === 'cash' ? this.round(this.tendered) : total,
+        change: this.method === 'cash' ? this.round(this.tendered - total) : 0, ref: this.ref,
+        customer: this.discount === 'none' ? null : { type: this.discount === 'senior' ? 'Senior' : 'PWD', name: this.cust.name, id: this.cust.id },
+        rx: null,
+        customerId: this.customer ? this.customer.id : null,
+      };
+      this.sale = sale;
+      const saved = ppSales.add(sale);
+      this.cart.forEach(c => { this.med(c.id).stock -= c.qty; });   // deduct stock
+      this.closeModal();
+      this.showToast(saved ? 'Sale ' + this.sale.no + ' completed' : 'Sale completed, but it couldn’t be saved to Sales History (storage unavailable).');
+      document.body.style.overflow = 'hidden';
+      this.$nextTick(() => this.$refs.newSale && this.$refs.newSale.focus());
+      if (this.receiptCfg.autoPrint && this.printerReady) this.printReceipt();   // auto-print only to a connected Bluetooth printer
+    },
+
+    /* ── receipt ── */
+    seq: 1, sale: null,
+    get receiptNo() { return 'R-' + ppDate().replace(/-/g, '') + '-' + String(this.seq).padStart(4, '0'); },
+    closeReceipt() {
+      this.sale = null; this.seq++;
+      this.cart = []; this.discount = 'none'; this.query = '';
+      this.cust = { name: '', id: '' };
+      this.customer = null; this.custOpen = false; this.custQuery = '';
+      document.body.style.overflow = '';
+      this.$nextTick(() => document.getElementById('pos-search').focus());
+    },
+  };
+}
+</script>
+</body>
+</html>

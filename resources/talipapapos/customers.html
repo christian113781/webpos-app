@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Customers — TalipapaPOS</title>
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Shared dashboard logic (sidebar, toast, notifications, modal plumbing) -->
+  <script src="assets/js/main.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { poppins: ['Poppins', 'sans-serif'] },
+          colors: {
+            brand: {
+              50:  '#effaf4', 100: '#d7f3e3', 200: '#b0e6c9',
+              400: '#3fbf84', 500: '#1b9a62', 600: '#12804f',
+              700: '#0e6a42', 900: '#0b2e22',
+            },
+          },
+          boxShadow: {
+            card: '0 1px 4px 0 rgba(27,154,98,.08), 0 4px 16px 0 rgba(27,154,98,.06)',
+          },
+        }
+      }
+    }
+  </script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    /* Phones: the delete confirm is a full-width bottom sheet (same style as the POS checkout). Other sizes unchanged. */
+    @media (max-width: 639px) {
+      #delete-backdrop { padding: 0; align-items: flex-end; }
+      #delete-backdrop > div {
+        max-width: none; max-height: 92dvh; overflow-y: auto;
+        border-radius: 1.5rem 1.5rem 0 0;
+        padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+      }
+    }
+  </style>
+</head>
+<body class="font-poppins text-gray-800 antialiased" x-data="customersPage()" x-cloak>
+<!-- ════ MOBILE OVERLAY ════ -->
+<div id="sidebar-overlay"
+     class="fixed inset-0 bg-gray-900/50 z-20 lg:hidden"
+     aria-hidden="true"
+     x-show="mobileOpen"
+     x-transition.opacity
+     @click="closeMobileSidebar()"
+     style="display:none"></div>
+
+<!-- ════ TOAST ════ -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true" :class="{ show: toast.show }">
+  <svg class="w-4 h-4 text-brand-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+  </svg>
+  <span x-text="toast.msg">Done</span>
+</div>
+<!-- ════════════════════════════════════════════════
+     LAYOUT SHELL
+════════════════════════════════════════════════ -->
+<div class="flex min-h-[100dvh]">
+
+  <!-- ════════════════════════════════════════════
+       SIDEBAR SECTION (shared markup + shared data
+       from main.js: navSections, sidebarCollapsed, mobileOpen)
+  ════════════════════════════════════════════════ -->
+  <aside id="sidebar"
+         aria-label="Primary navigation"
+         class="bg-white flex flex-col shadow-card flex-shrink-0 relative z-30"
+         :class="{ collapsed: sidebarCollapsed, 'mobile-open': mobileOpen }">
+
+    <div class="logo-wrap flex items-center gap-3 px-6 py-4 min-h-[77px] border-b border-gray-100 flex-shrink-0">
+      <a href="dashboard.html" class="flex items-center min-w-0" aria-label="TalipapaPOS — go to dashboard">
+        <img src="assets/img/logo.png" alt="TalipapaPOS" class="logo-full h-7 w-auto max-w-full" width="150" height="28">
+        <img src="assets/img/favicon.png" alt="TalipapaPOS" class="logo-mark w-9 h-9" width="36" height="36">
+      </a>
+    </div>
+
+    <nav class="flex-1 sidebar-scroll py-3 px-2" aria-label="Primary">
+      <template x-for="section in navSections" :key="section.label">
+        <div>
+          <!-- plain section: small heading + icon links -->
+          <p x-show="!section.collapsible" class="nav-section-label px-3 mb-2 mt-4 first:mt-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wider" x-text="section.label"></p>
+          <ul class="space-y-0.5" role="list" x-show="!section.collapsible">
+            <template x-for="item in (section.collapsible ? [] : section.items)" :key="item.name">
+              <li>
+                <a :href="item.href" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-700 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                   :aria-current="item.active ? 'page' : null" :title="item.name">
+                  <svg class="w-5 h-5 flex-shrink-0" :class="item.active ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon"/>
+                  </svg>
+                  <span class="nav-label" x-text="item.name"></span>
+                </a>
+              </li>
+            </template>
+          </ul>
+
+          <!-- dropdown group: icon + label + chevron, then text-only links -->
+          <div x-show="section.collapsible" style="display:none">
+            <button type="button"
+                    class="nav-link w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                    :class="section.items.some(i => i.active) ? 'text-brand-700 font-semibold' : 'text-gray-700'"
+                    @click="onGroupClick(section)" :aria-expanded="String(!!section.open)" :aria-controls="'nav-group-' + section.label.toLowerCase()" :title="section.label">
+              <svg class="w-5 h-5 flex-shrink-0" :class="section.items.some(i => i.active) ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="section.icon"/>
+              </svg>
+              <span class="nav-label flex-1 text-start" x-text="section.label"></span>
+              <svg class="nav-label w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200" :class="section.open ? '' : 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+            </button>
+            <ul class="nav-sub mt-0.5 space-y-0.5" role="list" :id="'nav-group-' + section.label.toLowerCase()" x-show="section.open" x-transition.opacity.duration.150ms>
+              <template x-for="item in (section.collapsible ? section.items : [])" :key="item.name">
+                <li>
+                  <a :href="item.href" class="nav-link flex items-center ps-11 pe-3 py-2 rounded-xl text-sm text-gray-600 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                     :aria-current="item.active ? 'page' : null">
+                    <span class="nav-label" x-text="item.name"></span>
+                  </a>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </template>
+    </nav>
+
+    <div class="border-t border-gray-100 px-3 py-4 flex-shrink-0">
+      <div class="user-wrap flex items-center gap-3">
+        <div class="user-avatar w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center flex-shrink-0 text-white text-xs font-bold" aria-hidden="true">MS</div>
+        <div class="user-info min-w-0">
+          <p class="text-sm font-semibold text-gray-800 truncate">Maria Santos</p>
+          <p class="text-[11px] text-gray-400 truncate">Store Manager</p>
+        </div>
+        <button type="button" onclick="location.href='login.html'" class="user-info ms-auto p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" aria-label="Sign out">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN COLUMN (header + page main, side by side with sidebar) ══ -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- ════════════════════════════════════════════
+         HEADER SECTION (shared markup + shared data
+         from main.js: toast, notifications, profile menu)
+    ════════════════════════════════════════════════ -->
+    <header class="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
+      <div class="flex items-center gap-3 px-4 sm:px-6 py-3.5">
+        <button id="collapse-btn"
+                class="hidden lg:flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-brand-600 transition-colors flex-shrink-0"
+                :class="{ 'is-collapsed': sidebarCollapsed }"
+                @click="toggleSidebar()"
+                :aria-expanded="(!sidebarCollapsed).toString()" aria-controls="sidebar"
+                :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v18"/>
+          </svg>
+        </button>
+        <button id="menu-btn"
+                class="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                @click="mobileOpen ? closeMobileSidebar() : openMobileSidebar()"
+                :aria-expanded="mobileOpen.toString()" aria-controls="sidebar"
+                :aria-label="mobileOpen ? 'Close navigation menu' : 'Open navigation menu'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <div class="flex-1 max-w-md">
+          <div class="relative">
+            <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+            <input id="global-search" type="search" placeholder="Search products, customers…"
+                   class="w-full ps-9 pe-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:bg-white focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition-colors min-h-[2.75rem]">
+          </div>
+        </div>
+        <div class="flex items-center gap-2 ms-auto">
+                    <div class="relative">
+            <button @click="notifOpen = !notifOpen"
+                    class="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                    :aria-label="'Notifications' + (unreadCount ? ' (' + unreadCount + ' unread)' : '')"
+                    aria-haspopup="true" :aria-expanded="notifOpen.toString()" aria-controls="notif-panel">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              <span class="absolute top-1.5 end-1.5 w-2 h-2 rounded-full bg-red-500" aria-hidden="true" x-show="unreadCount > 0"></span>
+            </button>
+
+            <div id="notif-panel" role="menu" aria-label="Notifications"
+                 x-show="notifOpen" x-transition
+                 @click.outside="notifOpen = false" @keydown.escape="notifOpen = false"
+                 class="fixed inset-x-3 top-[4.5rem] sm:absolute sm:inset-x-auto sm:end-0 sm:top-full sm:mt-2 sm:w-96 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <h2 class="text-sm font-bold text-gray-900">Notifications</h2>
+                <button @click="markAllRead()" x-show="unreadCount > 0"
+                        class="text-xs font-semibold text-brand-600 hover:text-brand-700">Mark all as read</button>
+              </div>
+              <ul class="max-h-[min(20rem,calc(100dvh-13rem))] overflow-y-auto overscroll-contain divide-y divide-gray-50" role="list">
+                <template x-for="n in notifications" :key="n.id">
+                  <li>
+                    <button @click="markRead(n)" class="w-full flex items-start gap-3 px-4 py-3 text-start hover:bg-gray-50/60 transition-colors" :class="{ 'bg-brand-50/40': !n.read }">
+                      <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" :class="n.iconBg" aria-hidden="true">
+                        <svg class="w-4 h-4" :class="n.iconColor" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="n.icon"/></svg>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-sm font-medium text-gray-800 truncate" x-text="n.title"></p>
+                        <p class="text-xs text-gray-500 mt-0.5" x-text="n.message"></p>
+                        <p class="text-[11px] text-gray-400 mt-1" x-text="n.time"></p>
+                      </div>
+                      <span class="w-2 h-2 rounded-full bg-brand-500 flex-shrink-0 mt-1.5" aria-hidden="true" x-show="!n.read"></span>
+                    </button>
+                  </li>
+                </template>
+                <li x-show="notifications.length === 0">
+                  <p class="px-4 py-8 text-center text-sm text-gray-400">You're all caught up.</p>
+                </li>
+              </ul>
+              <div class="px-4 py-3 border-t border-gray-100 text-center">
+                <a href="#" @click.prevent="notifOpen = false" class="text-xs font-semibold text-brand-600 hover:text-brand-700">View all notifications</a>
+              </div>
+            </div>
+          </div>
+          <div class="relative">
+            <button @click="profileOpen = !profileOpen"
+                    class="flex items-center gap-2 p-1 pe-2 rounded-full hover:bg-gray-100 transition-colors"
+                    aria-haspopup="true" :aria-expanded="profileOpen.toString()" aria-controls="profile-panel"
+                    aria-label="Account menu for Maria Santos">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0" aria-hidden="true">MS</div>
+              <svg class="w-3.5 h-3.5 text-gray-400 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+
+            <div id="profile-panel" role="menu" aria-label="Account menu"
+                 x-show="profileOpen" x-transition
+                 @click.outside="profileOpen = false" @keydown.escape="profileOpen = false"
+                 class="absolute end-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0" aria-hidden="true">MS</div>
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-gray-900 truncate">Maria Santos</p>
+                  <p class="text-xs text-gray-400 truncate">juan.delacruz@stockmaster.ph</p>
+                </div>
+              </div>
+              <ul class="py-1.5" role="list">
+                <li>
+                  <a href="profile.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                    My Profile
+                  </a>
+                </li>
+                <li>
+                  <a href="settings.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg>
+                    Account Settings
+                  </a>
+                </li>
+                <li>
+                  <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Help &amp; Support
+                  </a>
+                </li>
+              </ul>
+              <div class="border-t border-gray-100 py-1.5">
+                <button role="menuitem" type="button" onclick="location.href='login.html'" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" tabindex="-1" class="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-[1600px] mx-auto w-full">
+
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">Customers</h1>
+          <p class="text-sm text-gray-500 mt-0.5"><span x-text="customers.filter(c => c.active).length"></span> active · <span x-text="customers.length"></span> total · Allergy alerts help your pharmacists dispense safely.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button @click="exportCsv()" :disabled="!filtered.length" class="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-xl transition-colors min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Export CSV</button>
+          <button @click="openAdd()" class="flex items-center gap-2 px-4 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm min-h-[44px]"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg> Add customer</button>
+        </div>
+      </div>
+
+      <!-- STATS -->
+      <section aria-label="Customer summary">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Customers</p><p class="text-lg font-bold text-gray-900" x-text="customers.length"></p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-yellow-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Senior / PWD</p><p class="text-lg font-bold text-gray-900" x-text="customers.filter(c => c.type !== 'regular').length"></p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">With allergy alerts</p><p class="text-lg font-bold text-gray-900" x-text="customers.filter(c => c.allergies).length"></p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">New this month</p><p class="text-lg font-bold text-gray-900" x-text="newThisMonth"></p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- LIST CARD -->
+      <section aria-labelledby="table-heading" class="bg-white rounded-2xl shadow-card">
+        <div class="p-4 sm:p-5 border-b border-gray-100 flex flex-col xl:flex-row xl:items-center gap-3">
+          <h2 id="table-heading" class="sr-only">Customer list</h2>
+          <div class="relative xl:w-80 xl:flex-shrink-0">
+            <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+            <input type="search" x-model.debounce.200ms="query" placeholder="Search name, phone, email or ID no…" aria-label="Search customers"
+                   class="w-full ps-9 pe-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:bg-white focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition-colors min-h-[2.75rem]">
+          </div>
+          <select x-model="typeFilter" class="field xl:!w-auto xl:flex-shrink-0 min-h-[2.75rem] py-2 text-sm" aria-label="Filter by customer type">
+            <option value="all">All types</option>
+            <option value="regular">Regular</option>
+            <option value="senior">Senior citizen</option>
+            <option value="pwd">PWD</option>
+          </select>
+          <select x-model="flagFilter" class="field xl:!w-auto xl:flex-shrink-0 min-h-[2.75rem] py-2 text-sm" aria-label="Filter by status or alerts">
+            <option value="all">All customers</option>
+            <option value="active">Active only</option>
+            <option value="inactive">Inactive only</option>
+            <option value="allergy">With allergy alerts</option>
+          </select>
+          <select x-model="sortBy" class="field xl:!w-auto xl:flex-shrink-0 min-h-[2.75rem] py-2 text-sm xl:ms-auto" aria-label="Sort customers">
+            <option value="name">Sort: Name (A–Z)</option>
+            <option value="recent">Sort: Newest first</option>
+            <option value="spent">Sort: Most purchases</option>
+          </select>
+        </div>
+
+        <!-- TABLE (xl and up) -->
+        <div class="tbl-wrap hidden xl:block" tabindex="0" role="region" aria-labelledby="table-heading" x-show="filtered.length > 0">
+          <table class="w-full text-sm" style="min-inline-size:56rem">
+            <caption class="sr-only">Customers</caption>
+            <thead>
+              <tr class="text-left border-b border-gray-100">
+                <th scope="col" class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Customer</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Contact</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Type</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Allergies</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider text-end">Purchases</th>
+                <th scope="col" class="px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              <template x-for="c in paged" :key="c.id">
+                <tr class="hover:bg-gray-50/60 transition-colors" :class="{ 'opacity-60': !c.active }">
+                  <td class="px-5 py-3">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <div class="w-9 h-9 rounded-full bg-brand-50 text-brand-700 text-xs font-bold flex items-center justify-center flex-shrink-0" aria-hidden="true" x-text="initials(c.name)"></div>
+                      <div class="min-w-0">
+                        <p class="font-semibold text-gray-800 truncate"><span x-text="c.name"></span> <span class="badge bg-gray-100 text-gray-500 ms-1" x-show="!c.active">Inactive</span></p>
+                        <p class="text-[11px] text-gray-400" x-text="c.id + (c.birth ? ' · ' + age(c.birth) + ' yrs' : '')"></p>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-3 py-3 text-gray-600"><p x-text="c.phone"></p><p class="text-[11px] text-gray-400 truncate max-w-[14rem]" x-text="c.email || 'No email'"></p></td>
+                  <td class="px-3 py-3"><span class="badge" :class="typeMeta[c.type].cls"><span x-text="typeMeta[c.type].label"></span></span><p class="text-[11px] text-gray-400 mt-0.5" x-show="c.idNo" x-text="c.idNo"></p></td>
+                  <td class="px-3 py-3"><span class="badge bg-red-50 text-red-600 max-w-[14rem] truncate" x-show="c.allergies" :title="c.allergies"><span aria-hidden="true">⚠</span> <span class="truncate" x-text="c.allergies"></span></span><span class="text-xs text-gray-400" x-show="!c.allergies">None recorded</span></td>
+                  <td class="px-3 py-3 text-end"><p class="font-medium text-gray-800" x-text="peso(spent(c))"></p><p class="text-[11px] text-gray-400"><span x-text="history(c).length"></span> <span x-text="history(c).length === 1 ? 'visit' : 'visits'"></span></p></td>
+                  <td class="px-5 py-3">
+                    <div class="flex items-center justify-end gap-1">
+                      <button type="button" @click="openView(c)" class="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors" :aria-label="'View ' + c.name" title="View"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button>
+                      <button type="button" @click="openEdit(c)" class="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors" :aria-label="'Edit ' + c.name" title="Edit"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+                      <button type="button" @click="askDelete(c)" class="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" :aria-label="'Delete ' + c.name" title="Delete"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- CARD LIST (below xl) -->
+        <ul class="xl:hidden grid grid-cols-1 md:grid-cols-2" role="list" aria-label="Customer list" x-show="filtered.length > 0">
+          <template x-for="c in paged" :key="'c' + c.id">
+            <li class="p-4 border-b border-gray-100 md:odd:border-e" :class="{ 'opacity-60': !c.active }">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                  <div class="w-9 h-9 rounded-full bg-brand-50 text-brand-700 text-xs font-bold flex items-center justify-center flex-shrink-0" aria-hidden="true" x-text="initials(c.name)"></div>
+                  <div class="min-w-0"><p class="font-semibold text-gray-900 text-sm truncate" x-text="c.name"></p><p class="text-xs text-gray-500" x-text="c.phone"></p></div>
+                </div>
+                <span class="badge" :class="typeMeta[c.type].cls"><span x-text="typeMeta[c.type].label"></span></span>
+              </div>
+              <div class="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
+                <span class="badge bg-red-50 text-red-600" x-show="c.allergies"><span aria-hidden="true">⚠</span> <span x-text="c.allergies"></span></span>
+                <span class="badge bg-gray-100 text-gray-500" x-show="!c.active">Inactive</span>
+                <span><span class="text-gray-400">Purchases:</span> <span class="font-semibold text-gray-800" x-text="peso(spent(c))"></span></span>
+              </div>
+              <div class="flex items-center justify-end gap-1 mt-2 -me-2">
+                <button type="button" @click="openView(c)" class="inline-flex items-center justify-center w-10 h-10 rounded-lg text-gray-400 hover:bg-brand-50 hover:text-brand-600" :aria-label="'View ' + c.name" title="View"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button>
+                <button type="button" @click="openEdit(c)" class="inline-flex items-center justify-center w-10 h-10 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700" :aria-label="'Edit ' + c.name" title="Edit"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+                <button type="button" @click="askDelete(c)" class="inline-flex items-center justify-center w-10 h-10 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600" :aria-label="'Delete ' + c.name" title="Delete"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>
+              </div>
+            </li>
+          </template>
+        </ul>
+
+        <div class="p-10 text-center" x-show="customers.length === 0" style="display:none">
+          <div class="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-3" aria-hidden="true"><svg class="w-6 h-6 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg></div>
+          <h3 class="text-base font-bold text-gray-900">No customers yet</h3>
+          <p class="text-sm text-gray-500 mt-1">Save regular customers to track allergies, maintenance medicines and purchases.</p>
+          <button @click="openAdd()" class="mt-4 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold min-h-[44px]">Add your first customer</button>
+        </div>
+        <p class="p-8 text-center text-sm text-gray-400" x-show="customers.length > 0 && filtered.length === 0" style="display:none">No customers match your filters.</p>
+
+        <div class="flex flex-col gap-3 px-4 sm:px-5 py-4 border-t border-gray-100 md:flex-row md:items-center md:justify-between" x-show="customers.length > 0 && filtered.length > 0" style="display:none">
+          <div class="flex items-center justify-between md:justify-start gap-4">
+            <p class="text-xs text-gray-500">Showing <strong x-text="pageStart"></strong>–<strong x-text="pageEnd"></strong> of <strong x-text="filtered.length"></strong></p>
+            <label class="flex items-center gap-2 text-xs text-gray-500">
+              <span class="whitespace-nowrap">Rows per page</span>
+              <select x-model.number="pageSize" class="field !w-auto !min-h-[2.25rem] !py-1 !ps-2 !pe-7 text-xs" aria-label="Rows per page">
+                <option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="50">50</option>
+              </select>
+            </label>
+          </div>
+          <nav class="flex items-center justify-between md:justify-end gap-1" aria-label="Pagination">
+            <button @click="page = Math.max(1, page - 1)" :disabled="page === 1" class="px-4 py-2 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] sm:min-h-[36px]">Previous</button>
+            <span class="sm:hidden text-xs font-semibold text-gray-600" aria-live="polite">Page <span x-text="page"></span> of <span x-text="totalPages"></span></span>
+            <div class="hidden sm:flex items-center gap-1">
+              <template x-for="(n, i) in pageList" :key="i">
+                <span>
+                  <span x-show="n === '…'" class="w-9 h-9 inline-flex items-center justify-center text-xs text-gray-400" aria-hidden="true">…</span>
+                  <button x-show="n !== '…'" @click="page = n" class="w-9 h-9 rounded-lg text-xs font-semibold transition-colors" :class="page === n ? 'bg-brand-600 text-white' : 'text-gray-600 hover:bg-gray-100'" :aria-current="page === n ? 'page' : null" :aria-label="'Page ' + n" x-text="n"></button>
+                </span>
+              </template>
+            </div>
+            <button @click="page = Math.min(totalPages, page + 1)" :disabled="page === totalPages" class="px-4 py-2 rounded-lg text-xs font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px] sm:min-h-[36px]">Next</button>
+          </nav>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ════ ADD / EDIT CUSTOMER ════ -->
+<div id="modal-backdrop" class="pos-sheet" role="dialog" aria-modal="true" aria-labelledby="modal-title"
+     :class="{ open: modalOpen }" @keydown.escape="closeModal()"
+     @click="if ($event.target.id === 'modal-backdrop') closeModal()">
+  <div id="modal-dialog" x-ref="dialog" @keydown.tab="trapFocus($event)">
+    <div class="flex items-center justify-between px-6 py-5 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-[1.25rem]">
+      <div>
+        <h2 id="modal-title" class="text-lg font-bold text-gray-900" x-text="editingId ? 'Edit customer' : 'Add customer'"></h2>
+        <p class="text-xs text-gray-400 mt-0.5">Fields marked <span class="text-red-500">*</span> are required</p>
+      </div>
+      <button type="button" @click="closeModal()" class="p-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors" aria-label="Close dialog">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <form @submit.prevent="submitForm()" novalidate>
+      <div class="px-6 py-5 space-y-4">
+        <div>
+          <label for="cu-name" class="block text-xs font-semibold text-gray-600 mb-1.5">Full name <span class="text-red-500" aria-hidden="true">*</span></label>
+          <input id="cu-name" type="text" maxlength="80" class="field" :class="{ error: errors.name }" x-model.trim="form.name" autocomplete="off" :aria-invalid="!!errors.name">
+          <p class="text-xs text-red-500 mt-1" x-show="errors.name" x-text="errors.name"></p>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="cu-phone" class="block text-xs font-semibold text-gray-600 mb-1.5">Mobile number <span class="text-red-500" aria-hidden="true">*</span></label>
+            <input id="cu-phone" type="tel" inputmode="tel" maxlength="20" class="field" :class="{ error: errors.phone }" x-model.trim="form.phone" placeholder="09XX XXX XXXX" :aria-invalid="!!errors.phone">
+            <p class="text-xs text-red-500 mt-1" x-show="errors.phone" x-text="errors.phone"></p>
+          </div>
+          <div>
+            <label for="cu-email" class="block text-xs font-semibold text-gray-600 mb-1.5">Email</label>
+            <input id="cu-email" type="email" maxlength="80" class="field" :class="{ error: errors.email }" x-model.trim="form.email" :aria-invalid="!!errors.email">
+            <p class="text-xs text-red-500 mt-1" x-show="errors.email" x-text="errors.email"></p>
+          </div>
+          <div>
+            <label for="cu-birth" class="block text-xs font-semibold text-gray-600 mb-1.5">Date of birth</label>
+            <input id="cu-birth" type="date" class="field" :class="{ error: errors.birth }" x-model="form.birth" :max="today()" :aria-invalid="!!errors.birth">
+            <p class="text-xs text-red-500 mt-1" x-show="errors.birth" x-text="errors.birth"></p>
+            <p class="text-[11px] text-brand-700 mt-1" x-show="!errors.birth && form.birth && age(form.birth) >= 60 && form.type === 'regular'">Age 60+ — consider setting the type to Senior citizen.</p>
+          </div>
+          <div>
+            <label for="cu-type" class="block text-xs font-semibold text-gray-600 mb-1.5">Customer type</label>
+            <select id="cu-type" class="field" x-model="form.type">
+              <option value="regular" :selected="form.type === 'regular'">Regular</option>
+              <option value="senior" :selected="form.type === 'senior'">Senior citizen (20% discount)</option>
+              <option value="pwd" :selected="form.type === 'pwd'">PWD (20% discount)</option>
+            </select>
+          </div>
+        </div>
+        <div x-show="form.type !== 'regular'" style="display:none">
+          <label for="cu-id" class="block text-xs font-semibold text-gray-600 mb-1.5" x-text="(form.type === 'senior' ? 'Senior Citizen ID no.' : 'PWD ID no.')"></label>
+          <input id="cu-id" type="text" maxlength="30" class="field" :class="{ error: errors.idNo }" x-model.trim="form.idNo" :aria-invalid="!!errors.idNo">
+          <p class="text-xs text-red-500 mt-1" x-show="errors.idNo" x-text="errors.idNo"></p>
+        </div>
+        <div>
+          <label for="cu-address" class="block text-xs font-semibold text-gray-600 mb-1.5">Address</label>
+          <input id="cu-address" type="text" maxlength="140" class="field" x-model.trim="form.address">
+        </div>
+
+        <div class="rounded-xl border border-red-100 bg-red-50/30 p-4 space-y-4">
+          <p class="text-xs font-bold text-red-600 uppercase tracking-wide">Medical information</p>
+          <div>
+            <label for="cu-allergies" class="block text-xs font-semibold text-gray-600 mb-1.5">Drug allergies</label>
+            <input id="cu-allergies" type="text" maxlength="160" class="field" x-model.trim="form.allergies" placeholder="e.g. Penicillin, Sulfa drugs — separate with commas">
+            <p class="text-[11px] text-gray-400 mt-1">Leave blank if none are known.</p>
+          </div>
+          <div>
+            <label for="cu-cond" class="block text-xs font-semibold text-gray-600 mb-1.5">Conditions &amp; maintenance medicines</label>
+            <textarea id="cu-cond" rows="2" maxlength="300" class="field" x-model.trim="form.conditions" placeholder="e.g. Hypertension — Losartan 50mg"></textarea>
+          </div>
+        </div>
+
+        <div>
+          <label for="cu-notes" class="block text-xs font-semibold text-gray-600 mb-1.5">Notes</label>
+          <textarea id="cu-notes" rows="2" maxlength="300" class="field" x-model.trim="form.notes" placeholder="Preferences, delivery instructions, guardian name for minors…"></textarea>
+        </div>
+        <label class="flex items-start gap-3 rounded-xl border border-gray-100 px-4 py-3 cursor-pointer hover:bg-gray-50/60 min-h-[44px]">
+          <input type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-400" x-model="form.active">
+          <span><span class="block text-sm font-semibold text-gray-700">Active customer</span><span class="block text-xs text-gray-400">Untick to archive without deleting their records.</span></span>
+        </label>
+      </div>
+      <div class="flex items-center justify-end gap-2 sm:gap-3 px-4 sm:px-6 py-4 border-t border-gray-100 sticky bottom-0 bg-white rounded-b-[1.25rem]">
+        <button type="button" @click="closeModal()" class="whitespace-nowrap flex-shrink-0 px-4 sm:px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors min-h-[44px]">Cancel</button>
+        <button type="submit" class="whitespace-nowrap flex-shrink-0 px-5 sm:px-6 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px]" x-text="editingId ? 'Save changes' : 'Save customer'"></button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ════ VIEW CUSTOMER ════ -->
+<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-gray-900/55" style="display:none"
+     x-show="viewTarget" x-transition.opacity role="dialog" aria-modal="true" aria-labelledby="view-title"
+     @keydown.escape.window="viewTarget && !deleteTarget && closeView()" @click.self="closeView()">
+  <div class="bg-white w-full sm:max-w-xl rounded-t-[1.5rem] sm:rounded-[1.25rem] shadow-card max-h-[92dvh] overflow-y-auto pb-[env(safe-area-inset-bottom,0px)] sm:pb-0" x-ref="viewDialog" @keydown.tab="trapView($event)">
+    <div class="flex items-start justify-between gap-3 px-6 py-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-[1.25rem]">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-11 h-11 rounded-full bg-brand-50 text-brand-700 text-sm font-bold flex items-center justify-center flex-shrink-0" aria-hidden="true" x-text="viewTarget ? initials(viewTarget.name) : ''"></div>
+        <div class="min-w-0">
+          <h2 id="view-title" class="text-lg font-bold text-gray-900 truncate" x-text="viewTarget?.name"></h2>
+          <p class="text-xs text-gray-500" x-text="viewTarget ? viewTarget.id + ' · Customer since ' + fmtDate(viewTarget.added) : ''"></p>
+        </div>
+      </div>
+      <button type="button" @click="closeView()" x-ref="viewClose" class="p-2 -me-2 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors flex-shrink-0" aria-label="Close dialog">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <template x-if="viewTarget">
+      <div class="px-6 py-4 space-y-4">
+        <div class="rounded-xl bg-red-50 border border-red-100 px-4 py-3 flex items-start gap-3" x-show="viewTarget.allergies" role="alert">
+          <span class="text-red-500 text-lg leading-none" aria-hidden="true">⚠</span>
+          <div><p class="text-xs font-bold text-red-600 uppercase tracking-wide">Allergy alert</p><p class="text-sm text-red-700 mt-0.5" x-text="viewTarget.allergies"></p></div>
+        </div>
+        <dl class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <div><dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Mobile</dt><dd class="text-gray-800 mt-0.5" x-text="viewTarget.phone"></dd></div>
+          <div><dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Email</dt><dd class="text-gray-800 mt-0.5 break-all" x-text="viewTarget.email || '—'"></dd></div>
+          <div><dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Birthday</dt><dd class="text-gray-800 mt-0.5" x-text="viewTarget.birth ? fmtDate(viewTarget.birth) + ' (' + age(viewTarget.birth) + ' yrs)' : '—'"></dd></div>
+          <div><dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Type</dt><dd class="mt-0.5"><span class="badge" :class="typeMeta[viewTarget.type].cls" x-text="typeMeta[viewTarget.type].label"></span> <span class="text-xs text-gray-500" x-text="viewTarget.idNo"></span></dd></div>
+          <div class="col-span-2"><dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Address</dt><dd class="text-gray-800 mt-0.5" x-text="viewTarget.address || '—'"></dd></div>
+          <div class="col-span-2"><dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Conditions &amp; maintenance medicines</dt><dd class="text-gray-800 mt-0.5" x-text="viewTarget.conditions || '—'"></dd></div>
+          <div class="col-span-2" x-show="viewTarget.notes"><dt class="text-xs font-semibold text-gray-400 uppercase tracking-wide">Notes</dt><dd class="text-gray-800 mt-0.5 whitespace-pre-line" x-text="viewTarget.notes"></dd></div>
+        </dl>
+
+        <div>
+          <div class="flex items-baseline justify-between gap-2 mb-2">
+            <h3 class="text-sm font-bold text-gray-900">Purchase history</h3>
+            <p class="text-xs text-gray-500" x-text="history(viewTarget).length + (history(viewTarget).length === 1 ? ' visit' : ' visits') + ' · ' + peso(spent(viewTarget))"></p>
+          </div>
+          <div class="tbl-wrap rounded-xl border border-gray-100" tabindex="0" role="region" aria-label="Purchase history" x-show="history(viewTarget).length">
+            <table class="w-full text-sm" style="min-inline-size:22rem">
+              <thead><tr class="text-left bg-gray-50/70"><th scope="col" class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Receipt</th><th scope="col" class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th><th scope="col" class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider text-end">Total</th></tr></thead>
+              <tbody class="divide-y divide-gray-50">
+                <template x-for="s in history(viewTarget).slice(0, 8)" :key="s.no">
+                  <tr><td class="px-4 py-2.5 text-gray-800 font-medium" x-text="s.no"></td><td class="px-3 py-2.5 text-gray-600" x-text="fmtDate(s.ts)"></td><td class="px-4 py-2.5 text-gray-800 text-end" x-text="peso(s.t.total)"></td></tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <p class="text-sm text-gray-400 rounded-xl border border-dashed border-gray-200 px-4 py-5 text-center" x-show="!history(viewTarget).length">No purchases recorded for this customer yet. Sales link by name or discount ID.</p>
+        </div>
+      </div>
+    </template>
+    <div class="flex flex-wrap items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 sticky bottom-0 bg-white rounded-b-[1.25rem]">
+      <button type="button" @click="askDelete(viewTarget)" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-red-500 hover:bg-red-50 transition-colors min-h-[44px]">Delete</button>
+      <button type="button" @click="editFromView()" class="px-5 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px]">Edit customer</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ CONFIRM DELETE ════ -->
+<div id="delete-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title"
+     :class="{ open: deleteTarget }" @click="if ($event.target.id === 'delete-backdrop') cancelDelete()" @keydown.escape="cancelDelete()">
+  <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-card" x-ref="delDialog">
+    <div class="w-11 h-11 rounded-xl bg-red-50 flex items-center justify-center mb-3" aria-hidden="true">
+      <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"/></svg>
+    </div>
+    <h2 id="confirm-title" class="text-base font-bold text-gray-900" x-text="deleteTarget ? 'Delete ' + deleteTarget.name + '?' : ''"></h2>
+    <p class="text-sm text-gray-500 mt-1">This permanently removes the customer record, including allergy and medical notes. Past sales are not affected. You can mark them inactive instead.</p>
+    <div class="flex justify-end gap-3 mt-5">
+      <button x-ref="delCancel" @click="cancelDelete()" class="px-4 py-2 rounded-xl text-sm font-semibold text-gray-600 border border-gray-200 hover:bg-gray-50 min-h-[44px]">Keep customer</button>
+      <button @click="confirmDelete()" class="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 min-h-[44px]">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function customersPage() {
+  const today = () => ppDate();
+  const blank = () => ({ name: '', phone: '', email: '', birth: '', address: '', type: 'regular', idNo: '', allergies: '', conditions: '', notes: '', active: true });
+  return {
+    ...sharedChrome('customers.html'),
+    customers: ppCustomers.load(),
+    sales: ppSales.load(),
+    query: '', typeFilter: 'all', flagFilter: 'all', sortBy: 'name', page: 1,
+    pageSize: (() => { try { const n = parseInt(localStorage.getItem('pp-cust-pagesize'), 10); return [5, 10, 20, 50].includes(n) ? n : 10; } catch (e) { return 10; } })(),
+    modalOpen: false, editingId: null, form: blank(), errors: {},
+    viewId: null, viewFocus: null, deleteTarget: null, delFocus: null,
+    typeMeta: {
+      regular: { label: 'Regular', cls: 'bg-gray-100 text-gray-600' },
+      senior:  { label: 'Senior',  cls: 'bg-yellow-50 text-yellow-700' },
+      pwd:     { label: 'PWD',     cls: 'bg-teal-50 text-teal-700' },
+    },
+    init() {
+      ['typeFilter', 'flagFilter', 'query', 'sortBy'].forEach(k => this.$watch(k, () => { this.page = 1; }));
+      this.$watch('pageSize', v => { this.page = 1; try { localStorage.setItem('pp-cust-pagesize', String(v)); } catch (e) {} });
+    },
+
+    /* ── helpers ── */
+    today,
+    peso(n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+    fmtDate(v) { if (!v) return '—'; const d = new Date(v.length === 10 ? v + 'T00:00:00' : v); return isNaN(d) ? '—' : d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }); },
+    initials(n) { return String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase(); },
+    age(b) { if (!b) return 0; const d = new Date(b + 'T00:00:00'), t = new Date(); let a = t.getFullYear() - d.getFullYear(); if (t.getMonth() < d.getMonth() || (t.getMonth() === d.getMonth() && t.getDate() < d.getDate())) a--; return Math.max(a, 0); },
+    persist(msg) {
+      const ok = ppCustomers.save(this.customers);
+      this.showToast(ok ? msg : msg + ' on this page, but couldn’t be saved (storage unavailable).');
+    },
+    /* sales link to a customer by discount ID, name, or prescription patient name */
+    history(c) {
+      const n = c.name.trim().toLowerCase();
+      return this.sales.filter(s => s.status !== 'voided' && (
+        s.customerId === c.id ||
+        (s.customer && ((c.idNo && s.customer.id === c.idNo) || String(s.customer.name).trim().toLowerCase() === n)) ||
+        (s.rx && String(s.rx.patient).trim().toLowerCase() === n)));
+    },
+    spent(c) { return this.history(c).reduce((t, s) => t + Number(s.t.total || 0), 0); },
+    get newThisMonth() { const k = today().slice(0, 7); return this.customers.filter(c => (c.added || '').startsWith(k)).length; },
+
+    /* ── list ── */
+    get filtered() {
+      const q = this.query.trim().toLowerCase();
+      const list = this.customers.filter(c =>
+        (this.typeFilter === 'all' || c.type === this.typeFilter) &&
+        (this.flagFilter === 'all' || (this.flagFilter === 'active' && c.active) || (this.flagFilter === 'inactive' && !c.active) || (this.flagFilter === 'allergy' && !!c.allergies)) &&
+        (!q || (c.name + ' ' + c.phone + ' ' + (c.email || '') + ' ' + (c.idNo || '') + ' ' + c.id).toLowerCase().includes(q)));
+      const by = {
+        name: (a, b) => a.name.localeCompare(b.name),
+        recent: (a, b) => (b.added || '').localeCompare(a.added || '') || b.id.localeCompare(a.id),
+        spent: (a, b) => this.spent(b) - this.spent(a),
+      }[this.sortBy];
+      return list.sort(by);
+    },
+    get totalPages() { return Math.max(1, Math.ceil(this.filtered.length / this.pageSize)); },
+    get paged() {
+      if (this.page > this.totalPages) this.page = this.totalPages;
+      const s = (this.page - 1) * this.pageSize;
+      return this.filtered.slice(s, s + this.pageSize);
+    },
+    get pageList() {
+      const t = this.totalPages, p = this.page;
+      if (t <= 7) return Array.from({ length: t }, (_, i) => i + 1);
+      const set = new Set([1, 2, t - 1, t, p - 1, p, p + 1].filter(n => n >= 1 && n <= t));
+      const nums = [...set].sort((a, b) => a - b), out = [];
+      nums.forEach((n, i) => { if (i && n - nums[i - 1] > 1) out.push('…'); out.push(n); });
+      return out;
+    },
+    get pageStart() { return this.filtered.length ? (this.page - 1) * this.pageSize + 1 : 0; },
+    get pageEnd() { return Math.min(this.page * this.pageSize, this.filtered.length); },
+
+    /* ── view ── */
+    get viewTarget() { return this.customers.find(c => c.id === this.viewId) || null; },
+    openView(c) {
+      this.sales = ppSales.load();
+      this.viewFocus = document.activeElement; this.viewId = c.id;
+      document.body.style.overflow = 'hidden';
+      this.$nextTick(() => this.$refs.viewClose && this.$refs.viewClose.focus());
+    },
+    closeView() { this.viewId = null; document.body.style.overflow = ''; if (this.viewFocus) this.viewFocus.focus(); },
+    editFromView() { const c = this.viewTarget; if (!c) return; this.viewId = null; document.body.style.overflow = ''; this.viewFocus = null; this.openEdit(c); },
+    trapView(e) {
+      const f = [...this.$refs.viewDialog.querySelectorAll('a[href], button')].filter(el => !el.disabled && el.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    },
+
+    /* ── add / edit ── */
+    openAdd() { this.editingId = null; this.form = blank(); this.errors = {}; this.openModalCommon(); },
+    openEdit(c) {
+      this.editingId = c.id; this.errors = {};
+      this.form = { name: c.name, phone: c.phone, email: c.email || '', birth: c.birth || '', address: c.address || '', type: c.type, idNo: c.idNo || '', allergies: c.allergies || '', conditions: c.conditions || '', notes: c.notes || '', active: !!c.active };
+      this.openModalCommon();
+    },
+    validate() {
+      const f = this.form, e = {}, digits = f.phone.replace(/\D/g, '');
+      if (!f.name) e.name = 'Enter the customer’s full name.';
+      if (!f.phone) e.phone = 'Enter a mobile number.';
+      else if (digits.length < 7 || digits.length > 15 || /[^\d\s+()\-]/.test(f.phone)) e.phone = 'Enter a valid phone number.';
+      else if (this.customers.some(c => c.id !== this.editingId && c.phone.replace(/\D/g, '') === digits)) e.phone = 'Another customer already uses this number.';
+      if (f.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) e.email = 'Enter a valid email address.';
+      if (f.birth && f.birth > today()) e.birth = 'Date of birth can’t be in the future.';
+      if (f.type !== 'regular' && !f.idNo) e.idNo = 'Enter the ID number — it is required for the 20% discount.';
+      this.errors = e;
+      return !Object.keys(e).length;
+    },
+    submitForm() {
+      if (!this.validate()) {
+        this.$nextTick(() => { const el = this.$refs.dialog.querySelector('.field.error'); if (el) el.focus(); });
+        return;
+      }
+      const f = this.form;
+      const data = { name: f.name, phone: f.phone, email: f.email, birth: f.birth, address: f.address, type: f.type, idNo: f.type === 'regular' ? '' : f.idNo, allergies: f.allergies, conditions: f.conditions, notes: f.notes, active: f.active };
+      let msg;
+      if (this.editingId) { Object.assign(this.customers.find(x => x.id === this.editingId), data); msg = data.name + ' updated'; }
+      else { this.customers.unshift({ id: ppCustomers.nextId(this.customers), ...data, added: today() }); msg = data.name + ' added'; this.query = ''; this.typeFilter = 'all'; this.flagFilter = 'all'; }
+      this.closeModal();
+      this.persist(msg);
+    },
+
+    /* ── delete ── */
+    askDelete(c) { if (!c) return; this.delFocus = document.activeElement; this.deleteTarget = c; this.$nextTick(() => this.$refs.delCancel.focus()); },
+    cancelDelete() { this.deleteTarget = null; if (this.delFocus) this.delFocus.focus(); },
+    confirmDelete() {
+      const c = this.deleteTarget; if (!c) return;
+      this.deleteTarget = null; this.delFocus = null;
+      if (this.viewId === c.id) this.closeView();
+      this.customers = this.customers.filter(x => x.id !== c.id);
+      this.persist(c.name + ' deleted');
+    },
+
+    /* ── export ── */
+    exportCsv() {
+      const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+      const rows = [['ID', 'Name', 'Phone', 'Email', 'Birth date', 'Type', 'ID no.', 'Address', 'Allergies', 'Conditions', 'Status', 'Customer since']];
+      this.filtered.forEach(c => rows.push([c.id, c.name, c.phone, c.email, c.birth, this.typeMeta[c.type].label, c.idNo, c.address, c.allergies, c.conditions, c.active ? 'Active' : 'Inactive', c.added]));
+      const blob = new Blob(['\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'customers-' + today() + '.csv';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    },
+  };
+}
+</script>
+</body>
+</html>

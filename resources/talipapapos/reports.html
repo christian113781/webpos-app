@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Reports — TalipapaPOS</title>
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Shared dashboard logic (sidebar, toast, notifications, modal plumbing) -->
+  <script src="assets/js/main.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { poppins: ['Poppins', 'sans-serif'] },
+          colors: {
+            brand: {
+              50:  '#effaf4', 100: '#d7f3e3', 200: '#b0e6c9',
+              400: '#3fbf84', 500: '#1b9a62', 600: '#12804f',
+              700: '#0e6a42', 900: '#0b2e22',
+            },
+          },
+          boxShadow: {
+            card: '0 1px 4px 0 rgba(27,154,98,.08), 0 4px 16px 0 rgba(27,154,98,.06)',
+          },
+        }
+      }
+    }
+  </script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="font-poppins text-gray-800 antialiased" x-data="reportsPage()" x-cloak>
+<!-- ════ MOBILE OVERLAY ════ -->
+<div id="sidebar-overlay"
+     class="fixed inset-0 bg-gray-900/50 z-20 lg:hidden"
+     aria-hidden="true"
+     x-show="mobileOpen"
+     x-transition.opacity
+     @click="closeMobileSidebar()"
+     style="display:none"></div>
+
+<!-- ════ TOAST ════ -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true" :class="{ show: toast.show }">
+  <svg class="w-4 h-4 text-brand-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+  </svg>
+  <span x-text="toast.msg">Done</span>
+</div>
+<!-- ════════════════════════════════════════════════
+     LAYOUT SHELL
+════════════════════════════════════════════════ -->
+<div class="flex min-h-[100dvh]">
+
+  <!-- ════════════════════════════════════════════
+       SIDEBAR SECTION (shared markup + shared data
+       from main.js: navSections, sidebarCollapsed, mobileOpen)
+  ════════════════════════════════════════════════ -->
+  <aside id="sidebar"
+         aria-label="Primary navigation"
+         class="bg-white flex flex-col shadow-card flex-shrink-0 relative z-30"
+         :class="{ collapsed: sidebarCollapsed, 'mobile-open': mobileOpen }">
+
+    <div class="logo-wrap flex items-center gap-3 px-6 py-4 min-h-[77px] border-b border-gray-100 flex-shrink-0">
+      <a href="dashboard.html" class="flex items-center min-w-0" aria-label="TalipapaPOS — go to dashboard">
+        <img src="assets/img/logo.png" alt="TalipapaPOS" class="logo-full h-7 w-auto max-w-full" width="150" height="28">
+        <img src="assets/img/favicon.png" alt="TalipapaPOS" class="logo-mark w-9 h-9" width="36" height="36">
+      </a>
+    </div>
+
+    <nav class="flex-1 sidebar-scroll py-3 px-2" aria-label="Primary">
+      <template x-for="section in navSections" :key="section.label">
+        <div>
+          <!-- plain section: small heading + icon links -->
+          <p x-show="!section.collapsible" class="nav-section-label px-3 mb-2 mt-4 first:mt-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wider" x-text="section.label"></p>
+          <ul class="space-y-0.5" role="list" x-show="!section.collapsible">
+            <template x-for="item in (section.collapsible ? [] : section.items)" :key="item.name">
+              <li>
+                <a :href="item.href" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-700 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                   :aria-current="item.active ? 'page' : null" :title="item.name">
+                  <svg class="w-5 h-5 flex-shrink-0" :class="item.active ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon"/>
+                  </svg>
+                  <span class="nav-label" x-text="item.name"></span>
+                </a>
+              </li>
+            </template>
+          </ul>
+
+          <!-- dropdown group: icon + label + chevron, then text-only links -->
+          <div x-show="section.collapsible" style="display:none">
+            <button type="button"
+                    class="nav-link w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                    :class="section.items.some(i => i.active) ? 'text-brand-700 font-semibold' : 'text-gray-700'"
+                    @click="onGroupClick(section)" :aria-expanded="String(!!section.open)" :aria-controls="'nav-group-' + section.label.toLowerCase()" :title="section.label">
+              <svg class="w-5 h-5 flex-shrink-0" :class="section.items.some(i => i.active) ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="section.icon"/>
+              </svg>
+              <span class="nav-label flex-1 text-start" x-text="section.label"></span>
+              <svg class="nav-label w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200" :class="section.open ? '' : 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+            </button>
+            <ul class="nav-sub mt-0.5 space-y-0.5" role="list" :id="'nav-group-' + section.label.toLowerCase()" x-show="section.open" x-transition.opacity.duration.150ms>
+              <template x-for="item in (section.collapsible ? section.items : [])" :key="item.name">
+                <li>
+                  <a :href="item.href" class="nav-link flex items-center ps-11 pe-3 py-2 rounded-xl text-sm text-gray-600 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                     :aria-current="item.active ? 'page' : null">
+                    <span class="nav-label" x-text="item.name"></span>
+                  </a>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </template>
+    </nav>
+
+    <div class="border-t border-gray-100 px-3 py-4 flex-shrink-0">
+      <div class="user-wrap flex items-center gap-3">
+        <div class="user-avatar w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center flex-shrink-0 text-white text-xs font-bold" aria-hidden="true">MS</div>
+        <div class="user-info min-w-0">
+          <p class="text-sm font-semibold text-gray-800 truncate">Maria Santos</p>
+          <p class="text-[11px] text-gray-400 truncate">Store Manager</p>
+        </div>
+        <button type="button" onclick="location.href='login.html'" class="user-info ms-auto p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" aria-label="Sign out">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN COLUMN (header + page main, side by side with sidebar) ══ -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- ════════════════════════════════════════════
+         HEADER SECTION (shared markup + shared data
+         from main.js: toast, notifications, profile menu)
+    ════════════════════════════════════════════════ -->
+    <header class="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
+      <div class="flex items-center gap-3 px-4 sm:px-6 py-3.5">
+        <button id="collapse-btn"
+                class="hidden lg:flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-brand-600 transition-colors flex-shrink-0"
+                :class="{ 'is-collapsed': sidebarCollapsed }"
+                @click="toggleSidebar()"
+                :aria-expanded="(!sidebarCollapsed).toString()" aria-controls="sidebar"
+                :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v18"/>
+          </svg>
+        </button>
+        <button id="menu-btn"
+                class="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                @click="mobileOpen ? closeMobileSidebar() : openMobileSidebar()"
+                :aria-expanded="mobileOpen.toString()" aria-controls="sidebar"
+                :aria-label="mobileOpen ? 'Close navigation menu' : 'Open navigation menu'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <div class="flex-1 max-w-md">
+          <div class="relative">
+            <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+            <input id="global-search" type="search" placeholder="Search products, customers…"
+                   class="w-full ps-9 pe-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:bg-white focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition-colors min-h-[2.75rem]">
+          </div>
+        </div>
+        <div class="flex items-center gap-2 ms-auto">
+                    <div class="relative">
+            <button @click="notifOpen = !notifOpen"
+                    class="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                    :aria-label="'Notifications' + (unreadCount ? ' (' + unreadCount + ' unread)' : '')"
+                    aria-haspopup="true" :aria-expanded="notifOpen.toString()" aria-controls="notif-panel">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              <span class="absolute top-1.5 end-1.5 w-2 h-2 rounded-full bg-red-500" aria-hidden="true" x-show="unreadCount > 0"></span>
+            </button>
+
+            <div id="notif-panel" role="menu" aria-label="Notifications"
+                 x-show="notifOpen" x-transition
+                 @click.outside="notifOpen = false" @keydown.escape="notifOpen = false"
+                 class="fixed inset-x-3 top-[4.5rem] sm:absolute sm:inset-x-auto sm:end-0 sm:top-full sm:mt-2 sm:w-96 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <h2 class="text-sm font-bold text-gray-900">Notifications</h2>
+                <button @click="markAllRead()" x-show="unreadCount > 0"
+                        class="text-xs font-semibold text-brand-600 hover:text-brand-700">Mark all as read</button>
+              </div>
+              <ul class="max-h-[min(20rem,calc(100dvh-13rem))] overflow-y-auto overscroll-contain divide-y divide-gray-50" role="list">
+                <template x-for="n in notifications" :key="n.id">
+                  <li>
+                    <button @click="markRead(n)" class="w-full flex items-start gap-3 px-4 py-3 text-start hover:bg-gray-50/60 transition-colors" :class="{ 'bg-brand-50/40': !n.read }">
+                      <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" :class="n.iconBg" aria-hidden="true">
+                        <svg class="w-4 h-4" :class="n.iconColor" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="n.icon"/></svg>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-sm font-medium text-gray-800 truncate" x-text="n.title"></p>
+                        <p class="text-xs text-gray-500 mt-0.5" x-text="n.message"></p>
+                        <p class="text-[11px] text-gray-400 mt-1" x-text="n.time"></p>
+                      </div>
+                      <span class="w-2 h-2 rounded-full bg-brand-500 flex-shrink-0 mt-1.5" aria-hidden="true" x-show="!n.read"></span>
+                    </button>
+                  </li>
+                </template>
+                <li x-show="notifications.length === 0">
+                  <p class="px-4 py-8 text-center text-sm text-gray-400">You're all caught up.</p>
+                </li>
+              </ul>
+              <div class="px-4 py-3 border-t border-gray-100 text-center">
+                <a href="#" @click.prevent="notifOpen = false" class="text-xs font-semibold text-brand-600 hover:text-brand-700">View all notifications</a>
+              </div>
+            </div>
+          </div>
+          <div class="relative">
+            <button @click="profileOpen = !profileOpen"
+                    class="flex items-center gap-2 p-1 pe-2 rounded-full hover:bg-gray-100 transition-colors"
+                    aria-haspopup="true" :aria-expanded="profileOpen.toString()" aria-controls="profile-panel"
+                    aria-label="Account menu for Maria Santos">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0" aria-hidden="true">MS</div>
+              <svg class="w-3.5 h-3.5 text-gray-400 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+
+            <div id="profile-panel" role="menu" aria-label="Account menu"
+                 x-show="profileOpen" x-transition
+                 @click.outside="profileOpen = false" @keydown.escape="profileOpen = false"
+                 class="absolute end-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0" aria-hidden="true">MS</div>
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-gray-900 truncate">Maria Santos</p>
+                  <p class="text-xs text-gray-400 truncate">juan.delacruz@stockmaster.ph</p>
+                </div>
+              </div>
+              <ul class="py-1.5" role="list">
+                <li>
+                  <a href="profile.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                    My Profile
+                  </a>
+                </li>
+                <li>
+                  <a href="settings.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg>
+                    Account Settings
+                  </a>
+                </li>
+                <li>
+                  <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Help &amp; Support
+                  </a>
+                </li>
+              </ul>
+              <div class="border-t border-gray-100 py-1.5">
+                <button role="menuitem" type="button" onclick="location.href='login.html'" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" tabindex="-1" class="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-[1600px] mx-auto w-full">
+
+      <!-- PAGE TITLE + CONTROLS -->
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h1 class="text-xl sm:text-2xl font-bold text-gray-900">Reports</h1>
+          <p class="text-sm text-gray-500 mt-0.5" x-text="rangeLabel"></p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <select x-model="range" class="field !w-auto min-h-[44px] py-2 text-sm" aria-label="Report period">
+            <template x-for="r in ranges" :key="r.key">
+              <option :value="r.key" :selected="range === r.key" x-text="r.label"></option>
+            </template>
+          </select>
+          <button @click="exportCsv()" :disabled="!periodSales.length" class="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-semibold rounded-xl transition-colors min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Export CSV
+          </button>
+        </div>
+      </div>
+
+      <!-- NO SALES YET -->
+      <section class="bg-white rounded-2xl shadow-card p-8 sm:p-10 text-center" x-show="sales.length === 0" style="display:none">
+        <div class="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-3" aria-hidden="true">
+          <svg class="w-6 h-6 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        </div>
+        <h2 class="text-base font-bold text-gray-900">No sales to report yet</h2>
+        <p class="text-sm text-gray-500 mt-1 max-w-md mx-auto">Sales you ring up in Point of Sale show up here. The inventory report below works already.</p>
+        <div class="flex flex-wrap justify-center gap-2 mt-4">
+          <a href="pos.html" class="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold min-h-[44px] inline-flex items-center transition-colors">Open Point of Sale</a>
+          <button @click="loadSamples()" class="px-5 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-semibold min-h-[44px]">Load sample sales</button>
+        </div>
+      </section>
+
+      <!-- SALES KPIs -->
+      <section aria-label="Sales summary" x-show="sales.length > 0">
+        <div class="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Net sales</p><p class="text-lg font-bold text-gray-900" x-text="peso(kpi.total)"></p>
+            <p class="text-[11px]" :class="kpi.delta === null ? 'text-gray-400' : kpi.delta >= 0 ? 'text-brand-600' : 'text-red-500'" x-text="kpi.delta === null ? 'No earlier period' : (kpi.delta >= 0 ? '▲ ' : '▼ ') + (Math.abs(kpi.delta) > 999 ? '999+' : Math.abs(kpi.delta).toFixed(0)) + '% vs previous'"></p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Transactions</p><p class="text-lg font-bold text-gray-900" x-text="kpi.count"></p>
+            <p class="text-[11px] text-gray-400"><span x-text="kpi.units"></span> items · avg <span x-text="peso(kpi.avg)"></span></p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-yellow-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Est. gross profit</p><p class="text-lg font-bold text-gray-900" x-text="peso(kpi.profit)"></p>
+            <p class="text-[11px] text-gray-400"><span x-text="kpi.margin.toFixed(0)"></span>% margin · excl. VAT</p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Discounts &amp; voids</p><p class="text-lg font-bold text-gray-900" x-text="peso(kpi.discounts)"></p>
+            <p class="text-[11px] text-gray-400"><span x-text="kpi.voided"></span> voided (not counted)</p></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SALES TREND -->
+      <section aria-labelledby="trend-heading" class="bg-white rounded-2xl shadow-card" x-show="sales.length > 0">
+        <div class="px-4 sm:px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+          <h2 id="trend-heading" class="text-base font-bold text-gray-900" x-text="trendTitle"></h2>
+          <p class="text-xs text-gray-500 min-h-[1rem]" aria-live="polite" x-text="hoverBar ? hoverBar.full + ' · ' + peso(hoverBar.value) + ' · ' + hoverBar.count + (hoverBar.count === 1 ? ' sale' : ' sales') : 'Hover or tap a bar for details'"></p>
+        </div>
+        <div class="p-4 sm:p-5">
+          <div x-show="kpi.count === 0" class="py-10 text-center text-sm text-gray-400">No sales in this period.</div>
+          <div x-show="kpi.count > 0" class="flex gap-2">
+            <div class="flex flex-col justify-between text-[10px] text-gray-400 text-end pb-6 h-52 flex-shrink-0 w-12" aria-hidden="true">
+              <span x-text="peso(trendMax)"></span><span x-text="peso(trendMax / 2)"></span><span>₱0</span>
+            </div>
+            <div class="flex-1 min-w-0 overflow-x-auto no-scrollbar">
+              <div class="flex items-end gap-1 h-52 border-b border-gray-200" :style="'min-width:' + Math.min(trend.length * 14, 900) + 'px'" role="img" :aria-label="trendTitle + ': ' + peso(kpi.total) + ' across ' + kpi.count + ' sales'">
+                <template x-for="(b, i) in trend" :key="b.key">
+                  <button type="button" class="group flex-1 h-full flex items-end min-w-[8px] outline-none"
+                          @mouseenter="hoverBar = b" @mouseleave="hoverBar = null" @focus="hoverBar = b" @blur="hoverBar = null" @click="hoverBar = b"
+                          :aria-label="b.full + ': ' + peso(b.value)">
+                    <span class="block w-full rounded-t-md bg-brand-400 group-hover:bg-brand-600 group-focus-visible:bg-brand-600 transition-colors"
+                          :class="{ '!bg-gray-200': b.value === 0 }"
+                          :style="'height:' + (b.value === 0 ? 2 : Math.max(2, b.value / trendMax * 100)) + '%'"></span>
+                  </button>
+                </template>
+              </div>
+              <div class="flex gap-1 mt-1.5 h-4" :style="'min-width:' + Math.min(trend.length * 14, 900) + 'px'" aria-hidden="true">
+                <template x-for="(b, i) in trend" :key="'l' + b.key">
+                  <span class="flex-1 min-w-[8px] text-[10px] text-gray-400 text-center whitespace-nowrap overflow-visible" x-text="i % labelEvery === 0 ? b.label : ''"></span>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PAYMENT / DISCOUNT / CATEGORY -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6" x-show="sales.length > 0">
+        <section aria-labelledby="pay-heading" class="bg-white rounded-2xl shadow-card">
+          <div class="px-4 sm:px-5 py-4 border-b border-gray-100"><h2 id="pay-heading" class="text-base font-bold text-gray-900">Payment methods</h2></div>
+          <ul class="p-4 sm:p-5 space-y-4" role="list">
+            <template x-for="r in byMethod" :key="r.key">
+              <li>
+                <div class="flex items-center justify-between text-sm gap-2"><span class="font-medium text-gray-700" x-text="r.label"></span><span class="text-gray-500"><strong class="text-gray-900" x-text="peso(r.value)"></strong> · <span x-text="r.count"></span></span></div>
+                <div class="h-2 rounded-full bg-gray-100 mt-1.5 overflow-hidden"><div class="h-full rounded-full bg-brand-500" :style="'width:' + r.pct + '%'"></div></div>
+              </li>
+            </template>
+            <li x-show="byMethod.length === 0" class="text-sm text-gray-400 text-center py-4">No sales in this period.</li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="disc-heading" class="bg-white rounded-2xl shadow-card">
+          <div class="px-4 sm:px-5 py-4 border-b border-gray-100"><h2 id="disc-heading" class="text-base font-bold text-gray-900">Discounts given</h2></div>
+          <ul class="p-4 sm:p-5 space-y-4" role="list">
+            <template x-for="r in byDiscount" :key="r.key">
+              <li class="flex items-center justify-between text-sm gap-2">
+                <div><p class="font-medium text-gray-700" x-text="r.label"></p><p class="text-xs text-gray-400"><span x-text="r.count"></span> sale<span x-show="r.count !== 1">s</span></p></div>
+                <p class="font-bold text-gray-900" x-text="peso(r.value)"></p>
+              </li>
+            </template>
+            <li class="text-xs text-gray-400 pt-3 border-t border-gray-100" x-show="byDiscount.length > 0">Amount taken off the bill, before VAT.</li>
+            <li x-show="byDiscount.length === 0" class="text-sm text-gray-400 text-center py-4">No Senior/PWD discounts in this period.</li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="cat-heading" class="bg-white rounded-2xl shadow-card">
+          <div class="px-4 sm:px-5 py-4 border-b border-gray-100"><h2 id="cat-heading" class="text-base font-bold text-gray-900">Sales by category</h2></div>
+          <ul class="p-4 sm:p-5 space-y-4" role="list">
+            <template x-for="r in byCategory" :key="r.key">
+              <li>
+                <div class="flex items-center justify-between text-sm gap-2"><span class="font-medium text-gray-700 truncate" x-text="r.label"></span><strong class="text-gray-900 flex-shrink-0" x-text="peso(r.value)"></strong></div>
+                <div class="h-2 rounded-full bg-gray-100 mt-1.5 overflow-hidden"><div class="h-full rounded-full bg-brand-400" :style="'width:' + r.pct + '%'"></div></div>
+              </li>
+            </template>
+            <li x-show="byCategory.length === 0" class="text-sm text-gray-400 text-center py-4">No sales in this period.</li>
+          </ul>
+        </section>
+      </div>
+
+      <!-- TOP MEDICINES -->
+      <section aria-labelledby="top-heading" class="bg-white rounded-2xl shadow-card" x-show="sales.length > 0">
+        <div class="px-4 sm:px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+          <h2 id="top-heading" class="text-base font-bold text-gray-900">Top selling products</h2>
+          <select x-model="topBy" class="field !w-auto min-h-[2.75rem] py-2 text-sm" aria-label="Rank products by">
+            <option value="value">Rank by: Sales</option>
+            <option value="qty">Rank by: Units sold</option>
+            <option value="profit">Rank by: Est. profit</option>
+          </select>
+        </div>
+        <div class="tbl-wrap" tabindex="0" role="region" aria-labelledby="top-heading">
+          <table class="w-full text-sm" style="min-inline-size:32rem">
+            <caption class="sr-only">Top selling products in the selected period</caption>
+            <thead>
+              <tr class="text-left border-b border-gray-100">
+                <th scope="col" class="px-4 sm:px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider w-10">#</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider">Product</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider text-end">Units</th>
+                <th scope="col" class="px-3 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider text-end">Sales</th>
+                <th scope="col" class="px-4 sm:px-5 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wider text-end">Est. profit</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-50">
+              <template x-for="(r, i) in topMedicines" :key="r.id">
+                <tr class="hover:bg-gray-50/60 transition-colors">
+                  <td class="px-4 sm:px-5 py-3 text-gray-400 font-semibold" x-text="i + 1"></td>
+                  <td class="px-3 py-3"><p class="font-medium text-gray-800" x-text="r.brand + ' ' + r.strength"></p><p class="text-[11px] text-gray-400" x-text="r.generic"></p></td>
+                  <td class="px-3 py-3 text-end text-gray-600" x-text="r.qty"></td>
+                  <td class="px-3 py-3 text-end font-semibold text-gray-800" x-text="peso(r.value)"></td>
+                  <td class="px-4 sm:px-5 py-3 text-end text-gray-600" x-text="peso(r.profit)"></td>
+                </tr>
+              </template>
+              <tr x-show="topMedicines.length === 0"><td colspan="5" class="px-5 py-10 text-center text-sm text-gray-400">No sales in this period.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- INVENTORY SNAPSHOT -->
+      <section aria-labelledby="inv-heading" class="space-y-4">
+        <div class="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 id="inv-heading" class="text-lg font-bold text-gray-900">Inventory snapshot</h2>
+            <p class="text-sm text-gray-500 mt-0.5">Current stock, as of today</p>
+          </div>
+          <div class="flex gap-3 text-xs font-semibold">
+            <a href="product.html" class="text-brand-600 hover:text-brand-700">Products →</a>
+            <a href="expiry.html" class="text-brand-600 hover:text-brand-700">Expiry Tracker →</a>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Stock at cost</p><p class="text-lg font-bold text-gray-900" x-text="peso(inv.cost)"></p>
+            <p class="text-[11px] text-gray-400"><span x-text="peso(inv.retail)"></span> at retail</p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-yellow-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Low stock</p><p class="text-lg font-bold text-gray-900" x-text="inv.low.length"></p>
+            <p class="text-[11px] text-gray-400">At or below reorder level</p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Out of stock</p><p class="text-lg font-bold text-gray-900" x-text="inv.out.length"></p>
+            <p class="text-[11px] text-gray-400">Nothing on the shelf</p></div>
+          </div>
+          <div class="stat-card bg-white rounded-2xl p-3 sm:p-4 shadow-card flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center flex-shrink-0"><svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+            <div class="min-w-0"><p class="text-xs text-gray-500 font-semibold uppercase tracking-wide">Expiring ≤ 90 days</p><p class="text-lg font-bold text-gray-900" x-text="inv.expiring.length"></p>
+            <p class="text-[11px] text-gray-400"><span x-text="inv.expired.length"></span> already expired</p></div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          <section aria-labelledby="reorder-heading" class="bg-white rounded-2xl shadow-card">
+            <div class="px-4 sm:px-5 py-4 border-b border-gray-100"><h3 id="reorder-heading" class="text-base font-bold text-gray-900">Needs reorder</h3></div>
+            <ul class="divide-y divide-gray-50" role="list">
+              <template x-for="m in reorderList" :key="m.id">
+                <li class="flex items-center justify-between gap-3 px-4 sm:px-5 py-3">
+                  <div class="min-w-0"><p class="text-sm font-semibold text-gray-900 truncate" x-text="m.brand + ' ' + m.strength"></p><p class="text-xs text-gray-500">Reorder level: <span x-text="m.reorder"></span> <span x-text="m.unit"></span></p></div>
+                  <span class="badge flex-shrink-0" :class="m.stock <= 0 ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'" x-text="m.stock <= 0 ? 'Out of stock' : m.stock + ' left'"></span>
+                </li>
+              </template>
+              <li x-show="reorderList.length === 0" class="px-5 py-8 text-center text-sm text-gray-400">Everything is above its reorder level. 🎉</li>
+            </ul>
+          </section>
+
+          <section aria-labelledby="exp-heading" class="bg-white rounded-2xl shadow-card">
+            <div class="px-4 sm:px-5 py-4 border-b border-gray-100"><h3 id="exp-heading" class="text-base font-bold text-gray-900">Expiring soonest</h3></div>
+            <ul class="divide-y divide-gray-50" role="list">
+              <template x-for="m in expiringList" :key="m.id">
+                <li class="flex items-center justify-between gap-3 px-4 sm:px-5 py-3">
+                  <div class="min-w-0"><p class="text-sm font-semibold text-gray-900 truncate" x-text="m.brand + ' ' + m.strength"></p><p class="text-xs text-gray-500"><span x-text="m.stock"></span> <span x-text="m.unit"></span> · <span x-text="peso(m.stock * m.cost)"></span> at cost</p></div>
+                  <span class="badge flex-shrink-0" :class="expInfo(m).cls" x-text="expInfo(m).label"></span>
+                </li>
+              </template>
+              <li x-show="expiringList.length === 0" class="px-5 py-8 text-center text-sm text-gray-400">Nothing is expiring in the next 90 days. 🎉</li>
+            </ul>
+          </section>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script>
+function reportsPage() {
+  const day = 86400000;
+  const items = ppProducts().map(p => ({
+      id: p.id, brand: p.name, generic: p.brand || '', strength: p.variant || '', category: p.category, sku: p.sku,
+      batch: '', expiry: p.expiry, stock: p.stock, reorder: p.reorder, unit: p.unit, cost: p.cost, price: p.price,
+    }));
+  // batches removed on the Expiry Tracker stay at zero here too
+  try { (JSON.parse(localStorage.getItem('pp-expiry-log')) || []).forEach(e => { const m = items.find(x => x.id === e.id && (x.batch || '') === (e.batch || '')); if (m) m.stock = 0; }); } catch (e) {}
+  const byId = {}; items.forEach(m => byId[m.id] = m);
+  const startOfDay = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  const sum = (arr, f) => arr.reduce((n, x) => n + f(x), 0);
+  const saleCogs = s => sum(s.lines, l => (byId[l.m.id] ? byId[l.m.id].cost : 0) * l.qty);
+  const saleNet = s => s.t.total / (s.discount && s.discount !== 'none' ? 1 : 1.12);   // VAT is already left out of discounted sales
+
+  return {
+    ...sharedChrome('reports.html'),
+
+    sales: ppSales.load(),
+    items,
+    range: '30d', topBy: 'value', hoverBar: null,
+    ranges: [
+      { key: 'today', label: 'Today' }, { key: '7d', label: 'Last 7 days' }, { key: '30d', label: 'Last 30 days' },
+      { key: 'month', label: 'This month' }, { key: 'all', label: 'All time' },
+    ],
+
+    peso(n) { return '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: Math.round(n * 100) % 100 ? 2 : 0, maximumFractionDigits: 2 }); },
+
+    /* ── period ── */
+    get period() {
+      const today = startOfDay(new Date()), end = new Date(today.getTime() + day);
+      const start = { today: today, '7d': new Date(today.getTime() - 6 * day), '30d': new Date(today.getTime() - 29 * day),
+                      month: new Date(today.getFullYear(), today.getMonth(), 1), all: new Date(0) }[this.range];
+      const len = this.range === 'all' ? null : Math.round((end - start) / day);
+      return { start, end, len };
+    },
+    get rangeLabel() {
+      const p = this.period, f = d => d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+      if (this.range === 'all') return 'All recorded sales';
+      if (this.range === 'today') return f(p.start);
+      return f(p.start) + ' – ' + f(new Date(p.end.getTime() - 1));
+    },
+    inRange(s, start, end) { const t = new Date(s.ts).getTime(); return t >= start && t < end; },
+    get periodSales() { const p = this.period; return this.sales.filter(s => s.status === 'completed' && this.inRange(s, p.start, p.end)); },
+
+    /* ── KPIs ── */
+    get kpi() {
+      const L = this.periodSales, p = this.period;
+      const total = sum(L, s => s.t.total), net = sum(L, saleNet), profit = net - sum(L, saleCogs);
+      let delta = null;
+      if (p.len) {   // compare with the same-length period just before this one
+        const ps = new Date(p.start.getTime() - p.len * day);
+        const prev = sum(this.sales.filter(s => s.status === 'completed' && this.inRange(s, ps, p.start)), s => s.t.total);
+        if (prev > 0) delta = (total - prev) / prev * 100;
+      }
+      return {
+        total, count: L.length, units: sum(L, s => sum(s.lines, l => l.qty)), avg: L.length ? total / L.length : 0,
+        profit, margin: net > 0 ? profit / net * 100 : 0, discounts: sum(L, s => s.t.disc || 0), delta,
+        voided: this.sales.filter(s => s.status === 'voided' && this.inRange(s, p.start, p.end)).length,
+      };
+    },
+
+    /* ── trend chart ── */
+    get trendMode() { return this.range === 'today' ? 'hour' : this.range === 'all' ? 'month' : 'day'; },
+    get trendTitle() { return { hour: 'Sales by hour', day: 'Daily sales', month: 'Monthly sales' }[this.trendMode]; },
+    get trend() {
+      const mode = this.trendMode, L = this.periodSales, p = this.period, out = [];
+      const fmt = (d, o) => d.toLocaleDateString('en-PH', o);
+      if (mode === 'hour') {
+        for (let h = 0; h < 24; h++) { const hr = h % 12 || 12, ap = h < 12 ? 'am' : 'pm'; out.push({ key: 'h' + h, label: hr + ap, full: hr + ap + ' – ' + ((h + 1) % 12 || 12) + ((h + 1) % 24 < 12 ? 'am' : 'pm'), value: 0, count: 0, test: s => new Date(s.ts).getHours() === h }); }
+      } else if (mode === 'day') {
+        for (let d = new Date(p.start); d < p.end; d = new Date(d.getTime() + day)) {
+          const a = d.getTime(), b = a + day, c = new Date(a);
+          out.push({ key: 'd' + a, label: fmt(c, { month: 'short', day: 'numeric' }), full: fmt(c, { weekday: 'short', month: 'short', day: 'numeric' }), value: 0, count: 0, test: s => { const t = new Date(s.ts).getTime(); return t >= a && t < b; } });
+        }
+      } else {
+        if (!L.length) return [];
+        const first = L.reduce((m, s) => Math.min(m, new Date(s.ts).getTime()), Infinity), f = new Date(first), now = new Date();
+        for (let y = f.getFullYear(), m = f.getMonth(); y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth()); m++) {
+          if (m > 11) { m = 0; y++; }
+          const yy = y, mm = m, c = new Date(yy, mm, 1);
+          out.push({ key: 'm' + yy + '-' + mm, label: fmt(c, { month: 'short' }) + (mm === 0 ? ' ' + yy : ''), full: fmt(c, { month: 'long', year: 'numeric' }), value: 0, count: 0, test: s => { const t = new Date(s.ts); return t.getFullYear() === yy && t.getMonth() === mm; } });
+          if (mm === 11) { y++; m = -1; }
+        }
+      }
+      L.forEach(s => { const b = out.find(x => x.test(s)); if (b) { b.value += s.t.total; b.count++; } });
+      out.forEach(b => b.value = Math.round(b.value * 100) / 100);
+      if (mode === 'hour') { const used = out.map((b, i) => b.count ? i : -1).filter(i => i >= 0); const lo = Math.min(7, ...(used.length ? used : [7])), hi = Math.max(20, ...(used.length ? used : [20])); return out.slice(lo, hi + 1); }
+      return out;
+    },
+    get trendMax() { const m = Math.max(0, ...this.trend.map(b => b.value)); if (m <= 0) return 100; const mag = Math.pow(10, Math.floor(Math.log10(m))); return Math.ceil(m / mag * 2) / 2 * mag; },
+    get labelEvery() { const n = this.trend.length; return n <= 12 ? 1 : n <= 24 ? 2 : Math.ceil(n / 8); },
+
+    /* ── breakdowns ── */
+    group(keyFn, labelFn) {
+      const g = {};
+      this.periodSales.forEach(s => { const k = keyFn(s); (g[k] = g[k] || { key: k, label: labelFn(k), value: 0, count: 0 }); g[k].value += s.t.total; g[k].count++; });
+      const rows = Object.values(g).sort((a, b) => b.value - a.value), max = rows.length ? rows[0].value : 0;
+      rows.forEach(r => r.pct = max ? Math.max(3, r.value / max * 100) : 0);
+      return rows;
+    },
+    get byMethod() { const names = { cash: 'Cash', gcash: 'GCash', card: 'Card' }; return this.group(s => s.method, k => names[k] || k); },
+    get byDiscount() {
+      const names = { senior: 'Senior citizen', pwd: 'PWD' }, g = {};
+      this.periodSales.filter(s => s.discount && s.discount !== 'none').forEach(s => { (g[s.discount] = g[s.discount] || { key: s.discount, label: names[s.discount] || s.discount, value: 0, count: 0 }); g[s.discount].value += s.t.disc || 0; g[s.discount].count++; });
+      return Object.values(g).sort((a, b) => b.value - a.value);
+    },
+    get byCategory() {
+      const g = {};
+      this.periodSales.forEach(s => s.lines.forEach(l => { const c = (byId[l.m.id] || {}).category || 'Other'; g[c] = g[c] || { key: c, label: c, value: 0 }; g[c].value += l.total; }));
+      const rows = Object.values(g).sort((a, b) => b.value - a.value), max = rows.length ? rows[0].value : 0;
+      rows.forEach(r => r.pct = max ? Math.max(3, r.value / max * 100) : 0);
+      return rows;
+    },
+    get topMedicines() {
+      const g = {};
+      this.periodSales.forEach(s => s.lines.forEach(l => {
+        const r = g[l.m.id] = g[l.m.id] || { id: l.m.id, brand: l.m.brand, strength: l.m.strength, generic: l.m.generic, qty: 0, value: 0, profit: 0 };
+        r.qty += l.qty; r.value += l.total; r.profit += l.total / 1.12 - (byId[l.m.id] ? byId[l.m.id].cost : 0) * l.qty;
+      }));
+      return Object.values(g).sort((a, b) => b[this.topBy] - a[this.topBy]).slice(0, 10);
+    },
+
+    /* ── inventory ── */
+    daysLeft(m) { if (!m.expiry) return Infinity; return Math.ceil((new Date(m.expiry + 'T00:00:00') - startOfDay(new Date())) / day); },
+    get inv() {
+      const live = this.items.filter(m => m.stock > 0);
+      return {
+        cost: sum(live, m => m.stock * m.cost), retail: sum(live, m => m.stock * m.price),
+        low: this.items.filter(m => m.stock > 0 && m.stock <= m.reorder), out: this.items.filter(m => m.stock <= 0),
+        expiring: live.filter(m => { const d = this.daysLeft(m); return d >= 0 && d <= 90; }), expired: live.filter(m => this.daysLeft(m) < 0),
+      };
+    },
+    get reorderList() { return [...this.inv.out, ...this.inv.low].sort((a, b) => (a.stock / (a.reorder || 1)) - (b.stock / (b.reorder || 1))).slice(0, 6); },
+    get expiringList() { return [...this.inv.expired, ...this.inv.expiring].sort((a, b) => a.expiry.localeCompare(b.expiry)).slice(0, 6); },
+    expInfo(m) {
+      const d = this.daysLeft(m), n = Math.abs(d);
+      const label = d < 0 ? 'Expired ' + n + (n === 1 ? ' day ago' : ' days ago') : d === 0 ? 'Expires today' : d + (d === 1 ? ' day left' : ' days left');
+      const cls = d < 0 ? 'bg-red-50 text-red-600' : d <= 30 ? 'bg-orange-50 text-orange-600' : d <= 60 ? 'bg-amber-50 text-amber-600' : 'bg-yellow-50 text-yellow-700';
+      return { label, cls };
+    },
+
+    /* ── actions ── */
+    loadSamples() { this.sales = ppSampleStoreSales(); ppSales.save(this.sales); this.showToast('Sample sales loaded'); },
+    exportCsv() {
+      const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+      const names = { cash: 'Cash', gcash: 'GCash', card: 'Card' };
+      const rows = [['Receipt', 'Date', 'Cashier', 'Payment', 'Discount', 'Items', 'Total']];
+      this.periodSales.slice().sort((a, b) => a.ts.localeCompare(b.ts)).forEach(s => rows.push([s.no, s.date, s.cashier, names[s.method] || s.method, s.discount === 'none' ? '' : s.discount, sum(s.lines, l => l.qty), s.t.total.toFixed(2)]));
+      const blob = new Blob(['\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'sales-report-' + this.range + '-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    },
+  };
+}
+</script>
+</body>
+</html>

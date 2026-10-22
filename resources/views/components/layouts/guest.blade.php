@@ -15,7 +15,6 @@
   @livewireStyles
 </head>
 <body class="font-poppins text-gray-800 antialiased bg-[#f5faf7]">
-<a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-[9999] focus:rounded-lg focus:bg-brand-600 focus:px-4 focus:py-2 focus:font-semibold focus:text-white">Skip to main content</a>
 
 {{-- One centered column: logo on top, page content (the card) right under it. --}}
 <div class="relative isolate min-h-[100dvh] overflow-hidden bg-gradient-to-b from-[#f5faf7] to-white">

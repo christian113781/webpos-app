@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>My Profile — TalipapaPOS</title>
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Shared dashboard logic (sidebar, toast, notifications, modal plumbing) -->
+  <script src="assets/js/main.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { poppins: ['Poppins', 'sans-serif'] },
+          colors: {
+            brand: {
+              50:  '#effaf4', 100: '#d7f3e3', 200: '#b0e6c9',
+              400: '#3fbf84', 500: '#1b9a62', 600: '#12804f',
+              700: '#0e6a42', 900: '#0b2e22',
+            },
+          },
+          boxShadow: {
+            card: '0 1px 4px 0 rgba(27,154,98,.08), 0 4px 16px 0 rgba(27,154,98,.06)',
+          },
+        }
+      }
+    }
+  </script>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="font-poppins text-gray-800 antialiased" x-data="profilePage()" x-cloak>
+<!-- ════ MOBILE OVERLAY ════ -->
+<div id="sidebar-overlay"
+     class="fixed inset-0 bg-gray-900/50 z-20 lg:hidden"
+     aria-hidden="true"
+     x-show="mobileOpen"
+     x-transition.opacity
+     @click="closeMobileSidebar()"
+     style="display:none"></div>
+
+<!-- ════ TOAST ════ -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true" :class="{ show: toast.show }">
+  <svg class="w-4 h-4 text-brand-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+  </svg>
+  <span x-text="toast.msg">Done</span>
+</div>
+<!-- ════════════════════════════════════════════════
+     LAYOUT SHELL
+════════════════════════════════════════════════ -->
+<div class="flex min-h-[100dvh]">
+
+  <!-- ════════════════════════════════════════════
+       SIDEBAR SECTION (shared markup + shared data
+       from main.js: navSections, sidebarCollapsed, mobileOpen)
+  ════════════════════════════════════════════════ -->
+  <aside id="sidebar"
+         aria-label="Primary navigation"
+         class="bg-white flex flex-col shadow-card flex-shrink-0 relative z-30"
+         :class="{ collapsed: sidebarCollapsed, 'mobile-open': mobileOpen }">
+
+    <div class="logo-wrap flex items-center gap-3 px-6 py-4 min-h-[77px] border-b border-gray-100 flex-shrink-0">
+      <a href="dashboard.html" class="flex items-center min-w-0" aria-label="TalipapaPOS — go to dashboard">
+        <img src="assets/img/logo.png" alt="TalipapaPOS" class="logo-full h-7 w-auto max-w-full" width="150" height="28">
+        <img src="assets/img/favicon.png" alt="TalipapaPOS" class="logo-mark w-9 h-9" width="36" height="36">
+      </a>
+    </div>
+
+    <nav class="flex-1 sidebar-scroll py-3 px-2" aria-label="Primary">
+      <template x-for="section in navSections" :key="section.label">
+        <div>
+          <!-- plain section: small heading + icon links -->
+          <p x-show="!section.collapsible" class="nav-section-label px-3 mb-2 mt-4 first:mt-0 text-[10px] font-semibold text-gray-400 uppercase tracking-wider" x-text="section.label"></p>
+          <ul class="space-y-0.5" role="list" x-show="!section.collapsible">
+            <template x-for="item in (section.collapsible ? [] : section.items)" :key="item.name">
+              <li>
+                <a :href="item.href" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-700 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                   :aria-current="item.active ? 'page' : null" :title="item.name">
+                  <svg class="w-5 h-5 flex-shrink-0" :class="item.active ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="item.icon"/>
+                  </svg>
+                  <span class="nav-label" x-text="item.name"></span>
+                </a>
+              </li>
+            </template>
+          </ul>
+
+          <!-- dropdown group: icon + label + chevron, then text-only links -->
+          <div x-show="section.collapsible" style="display:none">
+            <button type="button"
+                    class="nav-link w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                    :class="section.items.some(i => i.active) ? 'text-brand-700 font-semibold' : 'text-gray-700'"
+                    @click="onGroupClick(section)" :aria-expanded="String(!!section.open)" :aria-controls="'nav-group-' + section.label.toLowerCase()" :title="section.label">
+              <svg class="w-5 h-5 flex-shrink-0" :class="section.items.some(i => i.active) ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="section.icon"/>
+              </svg>
+              <span class="nav-label flex-1 text-start" x-text="section.label"></span>
+              <svg class="nav-label w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-200" :class="section.open ? '' : 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+            </button>
+            <ul class="nav-sub mt-0.5 space-y-0.5" role="list" :id="'nav-group-' + section.label.toLowerCase()" x-show="section.open" x-transition.opacity.duration.150ms>
+              <template x-for="item in (section.collapsible ? section.items : [])" :key="item.name">
+                <li>
+                  <a :href="item.href" class="nav-link flex items-center ps-11 pe-3 py-2 rounded-xl text-sm text-gray-600 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                     :aria-current="item.active ? 'page' : null">
+                    <span class="nav-label" x-text="item.name"></span>
+                  </a>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </template>
+    </nav>
+
+    <div class="border-t border-gray-100 px-3 py-4 flex-shrink-0">
+      <div class="user-wrap flex items-center gap-3">
+        <div class="user-avatar w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center flex-shrink-0 text-white text-xs font-bold" aria-hidden="true">MS</div>
+        <div class="user-info min-w-0">
+          <p class="text-sm font-semibold text-gray-800 truncate">Maria Santos</p>
+          <p class="text-[11px] text-gray-400 truncate">Store Manager</p>
+        </div>
+        <button type="button" onclick="location.href='login.html'" class="user-info ms-auto p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors" aria-label="Sign out">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN COLUMN (header + page main, side by side with sidebar) ══ -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- ════════════════════════════════════════════
+         HEADER SECTION (shared markup + shared data
+         from main.js: toast, notifications, profile menu)
+    ════════════════════════════════════════════════ -->
+    <header class="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
+      <div class="flex items-center gap-3 px-4 sm:px-6 py-3.5">
+        <button id="collapse-btn"
+                class="hidden lg:flex items-center justify-center w-9 h-9 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-brand-600 transition-colors flex-shrink-0"
+                :class="{ 'is-collapsed': sidebarCollapsed }"
+                @click="toggleSidebar()"
+                :aria-expanded="(!sidebarCollapsed).toString()" aria-controls="sidebar"
+                :aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke-width="2"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v18"/>
+          </svg>
+        </button>
+        <button id="menu-btn"
+                class="lg:hidden p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                @click="mobileOpen ? closeMobileSidebar() : openMobileSidebar()"
+                :aria-expanded="mobileOpen.toString()" aria-controls="sidebar"
+                :aria-label="mobileOpen ? 'Close navigation menu' : 'Open navigation menu'">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <div class="flex-1 max-w-md">
+          <div class="relative">
+            <svg class="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
+            <input id="global-search" type="search" placeholder="Search products, customers…"
+                   class="w-full ps-9 pe-4 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg placeholder:text-gray-400 focus:bg-white focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition-colors min-h-[2.75rem]">
+          </div>
+        </div>
+        <div class="flex items-center gap-2 ms-auto">
+                    <div class="relative">
+            <button @click="notifOpen = !notifOpen"
+                    class="relative p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                    :aria-label="'Notifications' + (unreadCount ? ' (' + unreadCount + ' unread)' : '')"
+                    aria-haspopup="true" :aria-expanded="notifOpen.toString()" aria-controls="notif-panel">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              <span class="absolute top-1.5 end-1.5 w-2 h-2 rounded-full bg-red-500" aria-hidden="true" x-show="unreadCount > 0"></span>
+            </button>
+
+            <div id="notif-panel" role="menu" aria-label="Notifications"
+                 x-show="notifOpen" x-transition
+                 @click.outside="notifOpen = false" @keydown.escape="notifOpen = false"
+                 class="fixed inset-x-3 top-[4.5rem] sm:absolute sm:inset-x-auto sm:end-0 sm:top-full sm:mt-2 sm:w-96 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                <h2 class="text-sm font-bold text-gray-900">Notifications</h2>
+                <button @click="markAllRead()" x-show="unreadCount > 0"
+                        class="text-xs font-semibold text-brand-600 hover:text-brand-700">Mark all as read</button>
+              </div>
+              <ul class="max-h-[min(20rem,calc(100dvh-13rem))] overflow-y-auto overscroll-contain divide-y divide-gray-50" role="list">
+                <template x-for="n in notifications" :key="n.id">
+                  <li>
+                    <button @click="markRead(n)" class="w-full flex items-start gap-3 px-4 py-3 text-start hover:bg-gray-50/60 transition-colors" :class="{ 'bg-brand-50/40': !n.read }">
+                      <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" :class="n.iconBg" aria-hidden="true">
+                        <svg class="w-4 h-4" :class="n.iconColor" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="n.icon"/></svg>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="text-sm font-medium text-gray-800 truncate" x-text="n.title"></p>
+                        <p class="text-xs text-gray-500 mt-0.5" x-text="n.message"></p>
+                        <p class="text-[11px] text-gray-400 mt-1" x-text="n.time"></p>
+                      </div>
+                      <span class="w-2 h-2 rounded-full bg-brand-500 flex-shrink-0 mt-1.5" aria-hidden="true" x-show="!n.read"></span>
+                    </button>
+                  </li>
+                </template>
+                <li x-show="notifications.length === 0">
+                  <p class="px-4 py-8 text-center text-sm text-gray-400">You're all caught up.</p>
+                </li>
+              </ul>
+              <div class="px-4 py-3 border-t border-gray-100 text-center">
+                <a href="#" @click.prevent="notifOpen = false" class="text-xs font-semibold text-brand-600 hover:text-brand-700">View all notifications</a>
+              </div>
+            </div>
+          </div>
+          <div class="relative">
+            <button @click="profileOpen = !profileOpen"
+                    class="flex items-center gap-2 p-1 pe-2 rounded-full hover:bg-gray-100 transition-colors"
+                    aria-haspopup="true" :aria-expanded="profileOpen.toString()" aria-controls="profile-panel"
+                    aria-label="Account menu for Maria Santos">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-xs font-bold flex-shrink-0" aria-hidden="true">MS</div>
+              <svg class="w-3.5 h-3.5 text-gray-400 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+
+            <div id="profile-panel" role="menu" aria-label="Account menu"
+                 x-show="profileOpen" x-transition
+                 @click.outside="profileOpen = false" @keydown.escape="profileOpen = false"
+                 class="absolute end-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-card border border-gray-100 z-40 overflow-hidden"
+                 style="display:none">
+              <div class="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-sm font-bold flex-shrink-0" aria-hidden="true">MS</div>
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-gray-900 truncate">Maria Santos</p>
+                  <p class="text-xs text-gray-400 truncate">juan.delacruz@stockmaster.ph</p>
+                </div>
+              </div>
+              <ul class="py-1.5" role="list">
+                <li>
+                  <a href="profile.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                    My Profile
+                  </a>
+                </li>
+                <li>
+                  <a href="settings.html" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/></svg>
+                    Account Settings
+                  </a>
+                </li>
+                <li>
+                  <a href="#" role="menuitem" class="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                    <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Help &amp; Support
+                  </a>
+                </li>
+              </ul>
+              <div class="border-t border-gray-100 py-1.5">
+                <button role="menuitem" type="button" onclick="location.href='login.html'" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" tabindex="-1" class="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-[1100px] mx-auto w-full">
+
+      <div class="min-w-0">
+        <h1 class="text-xl sm:text-2xl font-bold text-gray-900">My Profile</h1>
+        <p class="text-sm text-gray-500 mt-0.5">Manage your personal details, professional license, pharmacy information and preferences.</p>
+      </div>
+
+      <!-- SUMMARY CARD -->
+      <section class="bg-white rounded-2xl shadow-card p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6" aria-label="Profile summary">
+        <div class="relative flex-shrink-0 self-start sm:self-auto">
+          <template x-if="saved.personal.photo"><img :src="saved.personal.photo" alt="" class="w-20 h-20 rounded-full object-cover border-2 border-brand-100"></template>
+          <template x-if="!saved.personal.photo"><div class="w-20 h-20 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-2xl font-bold" aria-hidden="true" x-text="initials(saved.personal)"></div></template>
+        </div>
+        <div class="min-w-0 flex-1">
+          <h2 class="text-lg font-bold text-gray-900 truncate" x-text="saved.personal.first + ' ' + saved.personal.last"></h2>
+          <p class="text-sm text-gray-500 truncate"><span x-text="saved.personal.role"></span><span x-show="saved.pro.inCharge && saved.personal.role === 'Pharmacist'"> · Pharmacist-in-charge</span> · <span x-text="saved.store.name"></span></p>
+          <div class="flex flex-wrap items-center gap-2 mt-2.5">
+            <span class="badge" :class="licMeta(saved.pro.prcExpiry).cls"><span class="w-1.5 h-1.5 rounded-full" :class="licMeta(saved.pro.prcExpiry).dot" aria-hidden="true"></span>PRC license: <span x-text="licMeta(saved.pro.prcExpiry).label"></span></span>
+            <span class="badge" :class="licMeta(saved.store.ltoExpiry).cls"><span class="w-1.5 h-1.5 rounded-full" :class="licMeta(saved.store.ltoExpiry).dot" aria-hidden="true"></span>FDA LTO: <span x-text="licMeta(saved.store.ltoExpiry).label"></span></span>
+          </div>
+        </div>
+        <dl class="grid grid-cols-2 sm:grid-cols-1 gap-x-6 gap-y-1 text-sm sm:text-end flex-shrink-0">
+          <div><dt class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Email</dt><dd class="text-gray-700 truncate max-w-[14rem]" x-text="saved.personal.email"></dd></div>
+          <div><dt class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Team member since</dt><dd class="text-gray-700" x-text="fmtDate(saved.joined)"></dd></div>
+        </dl>
+      </section>
+
+      <!-- TABS -->
+      <div class="bg-white rounded-2xl shadow-card">
+        <div class="border-b border-gray-100 px-2 sm:px-4 overflow-x-auto" role="tablist" aria-label="Profile sections" @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)">
+          <div class="flex gap-1 min-w-max">
+            <template x-for="t in tabs" :key="t.key">
+              <button type="button" role="tab" :id="'tab-' + t.key" :aria-selected="tab === t.key" :aria-controls="'panel-' + t.key" :tabindex="tab === t.key ? 0 : -1"
+                      @click="tab = t.key" class="px-4 py-3.5 text-sm font-semibold border-b-2 transition-colors min-h-[44px] whitespace-nowrap"
+                      :class="tab === t.key ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-500 hover:text-gray-800'">
+                <span x-text="t.label"></span><span class="ms-1.5 inline-block w-1.5 h-1.5 rounded-full bg-yellow-500 align-middle" x-show="isDirty(t.key)" title="Unsaved changes"></span>
+              </button>
+            </template>
+          </div>
+        </div>
+
+        <!-- PERSONAL -->
+        <section id="panel-personal" role="tabpanel" aria-labelledby="tab-personal" x-show="tab === 'personal'" class="p-5 sm:p-6">
+          <form @submit.prevent="savePersonal()" novalidate class="space-y-5">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+              <template x-if="forms.personal.photo"><img :src="forms.personal.photo" alt="Your profile photo" class="w-20 h-20 rounded-full object-cover border-2 border-brand-100"></template>
+              <template x-if="!forms.personal.photo"><div class="w-20 h-20 rounded-full bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center text-white text-2xl font-bold" aria-hidden="true" x-text="initials(forms.personal)"></div></template>
+              <div>
+                <div class="flex flex-wrap gap-2">
+                  <label for="pf-photo" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 cursor-pointer min-h-[44px] inline-flex items-center focus-within:ring-2 focus-within:ring-brand-200">Upload photo</label>
+                  <input id="pf-photo" type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" @change="pickPhoto($event)">
+                  <button type="button" x-show="forms.personal.photo" @click="forms.personal.photo = ''" class="px-4 py-2.5 rounded-xl text-sm font-semibold text-red-500 hover:bg-red-50 min-h-[44px]">Remove</button>
+                </div>
+                <p class="text-xs mt-1.5" :class="errors.photo ? 'text-red-500' : 'text-gray-400'" x-text="errors.photo || 'JPG, PNG or WebP. Resized automatically.'"></p>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label for="pf-first" class="block text-xs font-semibold text-gray-600 mb-1.5">First name <span class="text-red-500" aria-hidden="true">*</span></label>
+                <input id="pf-first" type="text" maxlength="40" class="field" :class="{ error: errors.first }" x-model.trim="forms.personal.first" autocomplete="given-name" :aria-invalid="!!errors.first">
+                <p class="text-xs text-red-500 mt-1" x-show="errors.first" x-text="errors.first"></p>
+              </div>
+              <div>
+                <label for="pf-last" class="block text-xs font-semibold text-gray-600 mb-1.5">Last name <span class="text-red-500" aria-hidden="true">*</span></label>
+                <input id="pf-last" type="text" maxlength="40" class="field" :class="{ error: errors.last }" x-model.trim="forms.personal.last" autocomplete="family-name" :aria-invalid="!!errors.last">
+                <p class="text-xs text-red-500 mt-1" x-show="errors.last" x-text="errors.last"></p>
+              </div>
+              <div>
+                <label for="pf-email" class="block text-xs font-semibold text-gray-600 mb-1.5">Email <span class="text-red-500" aria-hidden="true">*</span></label>
+                <input id="pf-email" type="email" maxlength="80" class="field" :class="{ error: errors.email }" x-model.trim="forms.personal.email" autocomplete="email" :aria-invalid="!!errors.email">
+                <p class="text-xs text-red-500 mt-1" x-show="errors.email" x-text="errors.email"></p>
+              </div>
+              <div>
+                <label for="pf-phone" class="block text-xs font-semibold text-gray-600 mb-1.5">Mobile number <span class="text-red-500" aria-hidden="true">*</span></label>
+                <input id="pf-phone" type="tel" inputmode="tel" maxlength="20" class="field" :class="{ error: errors.phone }" x-model.trim="forms.personal.phone" autocomplete="tel" :aria-invalid="!!errors.phone">
+                <p class="text-xs text-red-500 mt-1" x-show="errors.phone" x-text="errors.phone"></p>
+              </div>
+              <div>
+                <label for="pf-role" class="block text-xs font-semibold text-gray-600 mb-1.5">Role</label>
+                <select id="pf-role" class="field" x-model="forms.personal.role">
+                  <template x-for="r in roles" :key="r"><option :value="r" :selected="forms.personal.role === r" x-text="r"></option></template>
+                </select>
+              </div>
+              <div>
+                <label for="pf-birth" class="block text-xs font-semibold text-gray-600 mb-1.5">Date of birth</label>
+                <input id="pf-birth" type="date" class="field" :class="{ error: errors.birth }" x-model="forms.personal.birth" :max="today()" :aria-invalid="!!errors.birth">
+                <p class="text-xs text-red-500 mt-1" x-show="errors.birth" x-text="errors.birth"></p>
+              </div>
+              <div class="sm:col-span-2">
+                <label for="pf-address" class="block text-xs font-semibold text-gray-600 mb-1.5">Address</label>
+                <input id="pf-address" type="text" maxlength="140" class="field" x-model.trim="forms.personal.address" autocomplete="street-address">
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-gray-100">
+              <button type="button" @click="discard('personal')" :disabled="!isDirty('personal')" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed">Discard changes</button>
+              <button type="submit" :disabled="!isDirty('personal')" class="px-6 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed">Save changes</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- PROFESSIONAL -->
+        <section id="panel-professional" role="tabpanel" aria-labelledby="tab-professional" x-show="tab === 'professional'" class="p-5 sm:p-6" style="display:none">
+          <form @submit.prevent="savePro()" novalidate class="space-y-5">
+            <div class="rounded-xl border px-4 py-3 text-sm flex items-start gap-3" :class="licMeta(forms.pro.prcExpiry).box" role="status">
+              <span aria-hidden="true" class="text-lg leading-none" x-text="licMeta(forms.pro.prcExpiry).icon"></span>
+              <p x-text="licMeta(forms.pro.prcExpiry).msg('PRC license')"></p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label for="pf-prc" class="block text-xs font-semibold text-gray-600 mb-1.5">PRC license no. <span class="text-red-500" aria-hidden="true">*</span></label>
+                <input id="pf-prc" type="text" inputmode="numeric" maxlength="10" class="field" :class="{ error: errors.prcNo }" x-model.trim="forms.pro.prcNo" :aria-invalid="!!errors.prcNo">
+                <p class="text-xs text-red-500 mt-1" x-show="errors.prcNo" x-text="errors.prcNo"></p>
+              </div>
+              <div>
+                <label for="pf-prcexp" class="block text-xs font-semibold text-gray-600 mb-1.5">PRC license valid until <span class="text-red-500" aria-hidden="true">*</span></label>
+                <input id="pf-prcexp" type="date" class="field" :class="{ error: errors.prcExpiry }" x-model="forms.pro.prcExpiry" :aria-invalid="!!errors.prcExpiry">
+                <p class="text-xs text-red-500 mt-1" x-show="errors.prcExpiry" x-text="errors.prcExpiry"></p>
+              </div>
+              <div>
+                <label for="pf-ptr" class="block text-xs font-semibold text-gray-600 mb-1.5">PTR no. <span class="text-gray-400 font-normal">(optional)</span></label>
+                <input id="pf-ptr" type="text" maxlength="20" class="field" x-model.trim="forms.pro.ptrNo">
+              </div>
+            </div>
+            <label class="flex items-start gap-3 rounded-xl border border-gray-100 px-4 py-3 cursor-pointer hover:bg-gray-50/60 min-h-[44px]">
+              <input type="checkbox" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-400" x-model="forms.pro.inCharge">
+              <span><span class="block text-sm font-semibold text-gray-700">I am the pharmacist-in-charge</span><span class="block text-xs text-gray-400">The registered pharmacist responsible for dispensing and approving returns of prescription medicines.</span></span>
+            </label>
+            <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-gray-100">
+              <button type="button" @click="discard('pro')" :disabled="!isDirty('pro')" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed">Discard changes</button>
+              <button type="submit" :disabled="!isDirty('pro')" class="px-6 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed">Save changes</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- PHARMACY -->
+        <section id="panel-pharmacy" role="tabpanel" aria-labelledby="tab-pharmacy" x-show="tab === 'pharmacy'" class="p-5 sm:p-6" style="display:none">
+          <form @submit.prevent="saveStore()" novalidate class="space-y-5">
+            <div class="rounded-xl border px-4 py-3 text-sm flex items-start gap-3" :class="licMeta(forms.store.ltoExpiry).box" role="status">
+              <span aria-hidden="true" class="text-lg leading-none" x-text="licMeta(forms.store.ltoExpiry).icon"></span>
+              <p x-text="licMeta(forms.store.ltoExpiry).msg('FDA License to Operate')"></p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="sm:col-span-2">
+                <label for="st-name" class="block text-xs font-semibold text-gray-600 mb-1.5">Pharmacy / drugstore name <span class="text-red-500" aria-hidden="true">*</span></label>
+                <input id="st-name" type="text" maxlength="80" class="field" :class="{ error: errors.sname }" x-model.trim="forms.store.name" :aria-invalid="!!errors.sname">
+                <p class="text-xs text-red-500 mt-1" x-show="errors.sname" x-text="errors.sname"></p>
+              </div>
+              <div class="sm:col-span-2">
+                <label for="st-address" class="block text-xs font-semibold text-gray-600 mb-1.5">Address</label>
+                <input id="st-address" type="text" maxlength="140" class="field" x-model.trim="forms.store.address">
+              </div>
+              <div>
+                <label for="st-phone" class="block text-xs font-semibold text-gray-600 mb-1.5">Store phone</label>
+                <input id="st-phone" type="tel" maxlength="24" class="field" x-model.trim="forms.store.phone">
+              </div>
+              <div>
+                <label for="st-tin" class="block text-xs font-semibold text-gray-600 mb-1.5">TIN</label>
+                <input id="st-tin" type="text" maxlength="20" class="field" x-model.trim="forms.store.tin" placeholder="000-000-000-000">
+              </div>
+              <div>
+                <label for="st-lto" class="block text-xs font-semibold text-gray-600 mb-1.5">FDA LTO no.</label>
+                <input id="st-lto" type="text" maxlength="30" class="field" x-model.trim="forms.store.ltoNo">
+              </div>
+              <div>
+                <label for="st-ltoexp" class="block text-xs font-semibold text-gray-600 mb-1.5">LTO valid until</label>
+                <input id="st-ltoexp" type="date" class="field" :class="{ error: errors.ltoExpiry }" x-model="forms.store.ltoExpiry" :aria-invalid="!!errors.ltoExpiry">
+                <p class="text-xs text-red-500 mt-1" x-show="errors.ltoExpiry" x-text="errors.ltoExpiry"></p>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center justify-end gap-3 pt-2 border-t border-gray-100">
+              <button type="button" @click="discard('store')" :disabled="!isDirty('store')" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed">Discard changes</button>
+              <button type="submit" :disabled="!isDirty('store')" class="px-6 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed">Save changes</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- NOTIFICATIONS -->
+        <section id="panel-notifications" role="tabpanel" aria-labelledby="tab-notifications" x-show="tab === 'notifications'" class="p-5 sm:p-6" style="display:none">
+          <form @submit.prevent="savePrefs()" class="space-y-3">
+            <p class="text-sm text-gray-500">Choose which alerts appear in your notification bell.</p>
+            <template x-for="p in prefList" :key="p.key">
+              <div class="flex items-center justify-between gap-4 rounded-xl border border-gray-100 px-4 py-3">
+                <div class="min-w-0">
+                  <p class="text-sm font-semibold text-gray-800" :id="'pref-' + p.key" x-text="p.label"></p>
+                  <p class="text-xs text-gray-400" x-text="p.desc"></p>
+                </div>
+                <button type="button" role="switch" :aria-checked="forms.prefs[p.key].toString()" :aria-labelledby="'pref-' + p.key" @click="forms.prefs[p.key] = !forms.prefs[p.key]"
+                        class="relative w-11 h-6 rounded-full transition-colors flex-shrink-0 focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-2" :class="forms.prefs[p.key] ? 'bg-brand-600' : 'bg-gray-300'">
+                  <span class="absolute top-0.5 start-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform" :class="forms.prefs[p.key] ? 'translate-x-5 rtl:-translate-x-5' : ''"></span>
+                </button>
+              </div>
+            </template>
+            <div class="flex flex-wrap items-center justify-end gap-3 pt-3 border-t border-gray-100">
+              <button type="button" @click="discard('prefs')" :disabled="!isDirty('prefs')" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed">Discard changes</button>
+              <button type="submit" :disabled="!isDirty('prefs')" class="px-6 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px] disabled:opacity-40 disabled:cursor-not-allowed">Save preferences</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- SECURITY -->
+        <section id="panel-security" role="tabpanel" aria-labelledby="tab-security" x-show="tab === 'security'" class="p-5 sm:p-6" style="display:none">
+          <form @submit.prevent="changePassword()" novalidate class="space-y-4 max-w-md">
+            <h2 class="text-base font-bold text-gray-900">Change password</h2>
+            <div>
+              <label for="pw-cur" class="block text-xs font-semibold text-gray-600 mb-1.5">Current password</label>
+              <input id="pw-cur" :type="pw.show ? 'text' : 'password'" class="field" :class="{ error: errors.cur }" x-model="pw.cur" autocomplete="current-password" :aria-invalid="!!errors.cur">
+              <p class="text-xs text-red-500 mt-1" x-show="errors.cur" x-text="errors.cur"></p>
+            </div>
+            <div>
+              <label for="pw-new" class="block text-xs font-semibold text-gray-600 mb-1.5">New password</label>
+              <input id="pw-new" :type="pw.show ? 'text' : 'password'" class="field" :class="{ error: errors.next }" x-model="pw.next" autocomplete="new-password" aria-describedby="pw-rules" :aria-invalid="!!errors.next">
+              <p class="text-xs text-red-500 mt-1" x-show="errors.next" x-text="errors.next"></p>
+              <div class="flex gap-1 mt-2" aria-hidden="true"><template x-for="i in 4" :key="i"><span class="h-1.5 flex-1 rounded-full" :class="i <= strength.score ? strength.bar : 'bg-gray-100'"></span></template></div>
+              <p id="pw-rules" class="text-xs text-gray-400 mt-1">Strength: <strong x-text="pw.next ? strength.label : '—'"></strong> · at least 8 characters with upper and lower case letters and a number.</p>
+            </div>
+            <div>
+              <label for="pw-conf" class="block text-xs font-semibold text-gray-600 mb-1.5">Confirm new password</label>
+              <input id="pw-conf" :type="pw.show ? 'text' : 'password'" class="field" :class="{ error: errors.conf }" x-model="pw.conf" autocomplete="new-password" :aria-invalid="!!errors.conf">
+              <p class="text-xs text-red-500 mt-1" x-show="errors.conf" x-text="errors.conf"></p>
+            </div>
+            <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer min-h-[44px]"><input type="checkbox" class="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-400" x-model="pw.show"> Show passwords</label>
+            <button type="submit" class="px-6 py-2.5 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors shadow-sm min-h-[44px]">Update password</button>
+            <p class="text-xs text-gray-400">This starter has no sign-in server, so the form is checked but the password isn’t saved anywhere. Connect it to your API.</p>
+          </form>
+          <div class="mt-8 pt-6 border-t border-gray-100 max-w-md">
+            <h2 class="text-base font-bold text-gray-900">Sessions</h2>
+            <p class="text-sm text-gray-500 mt-1">You’re signed in on this device. Sign out everywhere else if you used a shared computer at the counter.</p>
+            <button type="button" @click="showToast('Signed out of other devices')" class="mt-3 px-5 py-2.5 rounded-xl text-sm font-semibold text-red-500 border border-red-200 hover:bg-red-50 transition-colors min-h-[44px]">Sign out other devices</button>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+function profilePage() {
+  const today = () => ppDate();
+  const clone = o => JSON.parse(JSON.stringify(o));
+  const KEYS = ['personal', 'pro', 'store', 'prefs'];
+  const loaded = ppProfile.load();
+  return {
+    ...sharedChrome('profile.html'),
+    saved: loaded,
+    forms: clone(KEYS.reduce((o, k) => (o[k] = loaded[k], o), {})),
+    tab: 'personal', errors: {},
+    pw: { cur: '', next: '', conf: '', show: false },
+    roles: ['Pharmacist', 'Pharmacy assistant', 'Cashier', 'Owner / Admin'],
+    tabs: [
+      { key: 'personal', label: 'Personal info' }, { key: 'professional', label: 'License' }, { key: 'pharmacy', label: 'Pharmacy' },
+      { key: 'notifications', label: 'Notifications' }, { key: 'security', label: 'Security' },
+    ],
+    prefList: [
+      { key: 'lowStock', label: 'Low-stock alerts', desc: 'When a medicine falls to its reorder level or runs out.' },
+      { key: 'expiring', label: 'Expiry alerts', desc: 'Medicines nearing or past their expiry date.' },
+      { key: 'deliveries', label: 'Delivery updates', desc: 'When a supplier’s purchase order arrives.' },
+      { key: 'returns', label: 'Returns awaiting approval', desc: 'Customer returns that need a pharmacist’s approval.' },
+      { key: 'daily', label: 'Daily sales summary', desc: 'A recap of the day’s sales at closing time.' },
+    ],
+    today,
+    initials(p) { return ((p.first || '?')[0] + (p.last || '')[0]).toUpperCase(); },
+    fmtDate(v) { if (!v) return '—'; const d = new Date(v.length === 10 ? v + 'T00:00:00' : v); return isNaN(d) ? '—' : d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }); },
+    moveTab(dir) {
+      const i = this.tabs.findIndex(t => t.key === this.tab), n = this.tabs[(i + dir + this.tabs.length) % this.tabs.length];
+      this.tab = n.key; this.$nextTick(() => { const el = document.getElementById('tab-' + n.key); if (el) el.focus(); });
+    },
+
+    /* license status (expired / expiring within 60 days / valid) */
+    licMeta(date) {
+      const days = date ? Math.ceil((new Date(date + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 86400000) : null;
+      const when = this.fmtDate(date);
+      if (days === null) return { label: 'Not set', cls: 'bg-gray-100 text-gray-600', dot: 'bg-gray-400', box: 'bg-gray-50 border-gray-200 text-gray-700', icon: 'ℹ', msg: n => 'No expiry date recorded for your ' + n + '.' };
+      if (days < 0) return { label: 'Expired', cls: 'bg-red-50 text-red-600', dot: 'bg-red-500', box: 'bg-red-50 border-red-200 text-red-700', icon: '⚠', msg: n => 'Your ' + n + ' expired on ' + when + '. Renew it before dispensing or operating.' };
+      if (days <= 60) return { label: 'Expires in ' + days + 'd', cls: 'bg-yellow-50 text-yellow-700', dot: 'bg-yellow-500', box: 'bg-yellow-50 border-yellow-200 text-yellow-800', icon: '⚠', msg: n => 'Your ' + n + ' expires on ' + when + ' (' + days + ' days). Start your renewal soon.' };
+      return { label: 'Valid', cls: 'bg-brand-50 text-brand-700', dot: 'bg-brand-500', box: 'bg-brand-50 border-brand-100 text-brand-700', icon: '✓', msg: n => 'Your ' + n + ' is valid until ' + when + '.' };
+    },
+
+    /* ── dirty tracking ── */
+    isDirty(tab) {
+      const map = { personal: ['personal'], professional: ['pro'], pharmacy: ['store'], notifications: ['prefs'], security: [] };
+      return (map[tab] || [tab]).some(k => JSON.stringify(this.forms[k]) !== JSON.stringify(this.saved[k]));
+    },
+    discard(k) { this.forms[k] = clone(this.saved[k]); this.errors = {}; },
+    persist(k, msg) {
+      this.saved[k] = clone(this.forms[k]); this.errors = {};
+      const ok = ppProfile.save(this.saved);
+      this.showToast(ok ? msg : msg + ' on this page, but couldn’t be saved (storage unavailable).');
+    },
+    focusError() { this.$nextTick(() => { const el = document.querySelector('[role=tabpanel]:not([style*="display: none"]) .field.error'); if (el) el.focus(); }); },
+
+    /* ── photo ── */
+    pickPhoto(ev) {
+      const f = ev.target.files && ev.target.files[0]; ev.target.value = '';
+      if (!f) return;
+      if (!/^image\/(png|jpe?g|webp)$/.test(f.type)) { this.errors = { ...this.errors, photo: 'Choose a JPG, PNG or WebP image.' }; return; }
+      if (f.size > 5 * 1024 * 1024) { this.errors = { ...this.errors, photo: 'That image is over 5 MB. Choose a smaller one.' }; return; }
+      const url = URL.createObjectURL(f), img = new Image();
+      img.onload = () => {
+        const S = 192, c = document.createElement('canvas'); c.width = c.height = S;
+        const m = Math.min(img.width, img.height), sx = (img.width - m) / 2, sy = (img.height - m) / 2;
+        c.getContext('2d').drawImage(img, sx, sy, m, m, 0, 0, S, S);
+        this.forms.personal.photo = c.toDataURL('image/jpeg', 0.85); this.errors = { ...this.errors, photo: '' }; URL.revokeObjectURL(url);
+      };
+      img.onerror = () => { this.errors = { ...this.errors, photo: 'That file couldn’t be read as an image.' }; URL.revokeObjectURL(url); };
+      img.src = url;
+    },
+
+    /* ── save sections ── */
+    savePersonal() {
+      const f = this.forms.personal, e = {}, digits = f.phone.replace(/\D/g, '');
+      if (!f.first) e.first = 'Enter your first name.';
+      if (!f.last) e.last = 'Enter your last name.';
+      if (!f.email) e.email = 'Enter your email.'; else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email)) e.email = 'Enter a valid email address.';
+      if (!f.phone) e.phone = 'Enter your mobile number.'; else if (digits.length < 7 || digits.length > 15 || /[^\d\s+()\-]/.test(f.phone)) e.phone = 'Enter a valid phone number.';
+      if (f.birth && f.birth > today()) e.birth = 'Date of birth can’t be in the future.';
+      this.errors = e; if (Object.keys(e).length) return this.focusError();
+      this.persist('personal', 'Profile updated');
+    },
+    savePro() {
+      const f = this.forms.pro, e = {};
+      if (!f.prcNo) e.prcNo = 'Enter your PRC license number.'; else if (!/^\d{5,10}$/.test(f.prcNo)) e.prcNo = 'Use 5 to 10 digits.';
+      if (!f.prcExpiry) e.prcExpiry = 'Enter the license expiry date.';
+      this.errors = e; if (Object.keys(e).length) return this.focusError();
+      this.persist('pro', 'License details saved');
+    },
+    saveStore() {
+      const f = this.forms.store, e = {};
+      if (!f.name) e.sname = 'Enter the pharmacy name.';
+      this.errors = e; if (Object.keys(e).length) return this.focusError();
+      this.persist('store', 'Pharmacy details saved');
+    },
+    savePrefs() { this.persist('prefs', 'Notification preferences saved'); },
+
+    /* ── password (validated only; nothing is stored) ── */
+    get strength() {
+      const p = this.pw.next; let s = 0;
+      if (p.length >= 8) s++; if (/[a-z]/.test(p) && /[A-Z]/.test(p)) s++; if (/\d/.test(p)) s++; if (/[^A-Za-z0-9]/.test(p) || p.length >= 12) s++;
+      return { score: s, label: ['Too weak', 'Weak', 'Fair', 'Good', 'Strong'][s], bar: ['bg-red-400', 'bg-red-400', 'bg-yellow-500', 'bg-brand-400', 'bg-brand-600'][s] };
+    },
+    changePassword() {
+      const p = this.pw, e = {};
+      if (!p.cur) e.cur = 'Enter your current password.';
+      if (p.next.length < 8 || !/[a-z]/.test(p.next) || !/[A-Z]/.test(p.next) || !/\d/.test(p.next)) e.next = 'Use at least 8 characters with upper and lower case letters and a number.';
+      else if (p.next === p.cur) e.next = 'Choose a password different from your current one.';
+      if (p.conf !== p.next) e.conf = 'The passwords don’t match.';
+      this.errors = e; if (Object.keys(e).length) return this.focusError();
+      this.pw = { cur: '', next: '', conf: '', show: false };
+      this.showToast('Password updated');
+    },
+  };
+}
+</script>
+</body>
+</html>

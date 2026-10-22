@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Page not found — TalipapaPOS</title>
+  <link rel="icon" type="image/png" href="assets/img/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script src="assets/js/main.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      fontFamily: { poppins: ['Poppins', 'sans-serif'] },
+      colors: { brand: { 50:'#effaf4', 100:'#d7f3e3', 200:'#b0e6c9', 400:'#3fbf84', 500:'#1b9a62', 600:'#12804f', 700:'#0e6a42', 900:'#0b2e22' } },
+      boxShadow: { card: '0 1px 4px 0 rgba(27,154,98,.08), 0 4px 16px 0 rgba(27,154,98,.06)' }
+    } } }
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="font-poppins text-gray-800 antialiased bg-brand-50">
+<main id="main" class="min-h-[100dvh] flex items-center justify-center px-4 py-10">
+  <div class="w-full max-w-lg text-center">
+    <a href="index.html" class="inline-flex justify-center mb-6" aria-label="TalipapaPOS home"><img src="assets/img/logo.png" alt="TalipapaPOS" class="h-10 w-auto" width="214" height="40"></a>
+    <div class="bg-white rounded-2xl shadow-card p-8 sm:p-10">
+      <svg class="w-28 h-28 mx-auto" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+        <circle cx="60" cy="60" r="56" fill="#effaf4"/>
+        <g transform="rotate(-35 60 60)"><rect x="28" y="46" width="64" height="28" rx="14" fill="#fff" stroke="#1b9a62" stroke-width="3"/><path d="M60 46h18a14 14 0 010 28H60z" fill="#b0e6c9" stroke="#1b9a62" stroke-width="3" stroke-linejoin="round"/></g>
+        <path d="M52 20l4 8m12-8l-4 8" stroke="#3fbf84" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      <p class="mt-4 text-6xl font-bold text-brand-600">404</p>
+      <h1 class="mt-2 text-xl font-semibold text-gray-900">Page not found</h1>
+      <p class="mt-2 text-sm text-gray-500">The page <span id="path" class="font-mono text-gray-600 break-all"></span> doesn’t exist or may have been moved. Let’s get you back on track.</p>
+      <div class="mt-7 flex flex-col sm:flex-row gap-3 justify-center">
+        <a id="home" href="dashboard.html" class="px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition-colors min-h-[44px] inline-flex items-center justify-center">Back to dashboard</a>
+        <button type="button" onclick="history.length > 1 ? history.back() : location.href='dashboard.html'" class="px-6 py-2.5 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-semibold transition-colors min-h-[44px]">Go back</button>
+      </div>
+      <p class="mt-6 text-xs text-gray-400">Looking for something? Try
+        <a href="pos.html" class="text-brand-600 hover:underline">Point of Sale</a>,
+        <a href="product.html" class="text-brand-600 hover:underline">Products</a> or
+        <a href="sales.html" class="text-brand-600 hover:underline">Sales History</a>.</p>
+    </div>
+  </div>
+</main>
+<script>
+  document.getElementById('path').textContent = location.pathname.split('/').pop() || '/';
+</script>
+</body>
+</html>
