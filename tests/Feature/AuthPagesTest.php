@@ -17,6 +17,9 @@ class AuthPagesTest extends TestCase
         $this->get(route('login'))
             ->assertOk()
             ->assertSee('wire:submit="login"', false)
+            ->assertSee('id="f-email"', false)
+            ->assertSee('id="password"', false)
+            ->assertSee('Keep me signed in on this device')
             ->assertSee(route('google.redirect'), false);
     }
 
@@ -25,6 +28,10 @@ class AuthPagesTest extends TestCase
         $this->get(route('register'))
             ->assertOk()
             ->assertSee('wire:submit="register"', false)
+            ->assertSee('id="f-name"', false)
+            ->assertSee('id="f-email"', false)
+            ->assertSee('id="password"', false)
+            ->assertSee('id="password_confirmation"', false)
             ->assertSee(route('google.redirect'), false);
     }
 
