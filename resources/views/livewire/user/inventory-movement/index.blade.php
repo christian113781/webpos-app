@@ -1,7 +1,7 @@
 <main id="main" tabindex="-1" class="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-[1600px] mx-auto w-full">
     <x-ui.page-header title="Inventory Movements" :description="$movements->total() . ' of ' . $totalMovements . ' stock movements'">
         <x-ui.button :href="route('user.inventory-movements.adjust-stock')" wire:navigate icon="plus">
-            Adjust Stock
+            Stock Adjustment
         </x-ui.button>
     </x-ui.page-header>
 

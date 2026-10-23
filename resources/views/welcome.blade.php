@@ -12,7 +12,7 @@
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>TalipapaPOS — Point of Sale for Small Businesses in the Philippines</title>
   <meta name="description" content="Sell faster, track stock, manage suppliers and customers, and see your profit — one simple POS for sari-sari stores, cafés, pharmacies, groceries and every small shop.">
-  <link rel="icon" type="image/png" href="{{ Vite::asset('resources/img/favicon.png') }}">
+  <link rel="icon" type="image/png" href="{{ asset('talipapapos/assets/img/favicon.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">

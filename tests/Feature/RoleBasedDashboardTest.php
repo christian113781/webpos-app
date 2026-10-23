@@ -23,6 +23,7 @@ class RoleBasedDashboardTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.dashboard'))
             ->assertOk()
+            ->assertSee('rel="icon" type="image/png" href="' . asset('talipapapos/assets/img/favicon.png') . '"', false)
             ->assertSee('Admin dashboard');
     }
 
@@ -35,6 +36,7 @@ class RoleBasedDashboardTest extends TestCase
         $this->actingAs($user)
             ->get(route('dashboard'))
             ->assertOk()
+            ->assertSee('rel="icon" type="image/png" href="' . asset('talipapapos/assets/img/favicon.png') . '"', false)
             ->assertSee('User dashboard')
             ->assertSee('Primary navigation')
             ->assertSee('global-search', false)

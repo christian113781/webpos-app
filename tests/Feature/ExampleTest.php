@@ -14,6 +14,7 @@ class ExampleTest extends TestCase
     {
         $response = $this->get('/');
 
-        $response->assertStatus(200);
+        $response->assertStatus(200)
+            ->assertSee('rel="icon" type="image/png" href="' . asset('talipapapos/assets/img/favicon.png') . '"', false);
     }
 }

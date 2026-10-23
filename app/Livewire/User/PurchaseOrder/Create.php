@@ -253,7 +253,7 @@ class Create extends Component
                     'inventoryMovements as stock_out_quantity' => fn ($query) => $query->where('type', 'stock_out'),
                 ], 'quantity')
                 ->orderBy('name')
-                ->get(['id', 'name', 'sku', 'cost_price', 'unit'])
+                ->get(['id', 'name', 'sku', 'cost_price', 'unit', 'reorder_level', 'track_inventory'])
                 ->map(fn (Product $product): array => [
                     'id' => $product->id,
                     'name' => $product->name,
@@ -261,6 +261,9 @@ class Create extends Component
                     'costPrice' => (float) $product->cost_price,
                     'unit' => $product->unit->label(),
                     'onHand' => (float) ($product->stock_in_quantity ?? 0) - (float) ($product->stock_out_quantity ?? 0),
+                    'reorderLevel' => (float) $product->reorder_level,
+                    'trackInventory' => $product->track_inventory,
+                    'stockStatus' => $product->stock_status,
                 ])
                 ->values(),
         ]);

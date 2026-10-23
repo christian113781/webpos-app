@@ -26,7 +26,7 @@ class AdjustStock extends Component
     {
         $this->adjustmentDate = now()->toDateString();
         $this->lines = [
-            ['productId' => '', 'quantity' => '', 'reason' => ''],
+            ['id' => 1, 'productId' => '', 'quantity' => '', 'reason' => ''],
         ];
     }
 
@@ -173,7 +173,7 @@ class AdjustStock extends Component
                 'inventoryMovements as stock_out_quantity' => fn ($query) => $query->where('type', 'stock_out'),
             ], 'quantity')
             ->orderBy('name')
-            ->get(['id', 'name', 'unit'])
+            ->get(['id', 'name', 'unit', 'reorder_level'])
             ->map(fn (Product $product): array => [
                 'id' => $product->id,
                 'name' => $product->name,
@@ -186,6 +186,7 @@ class AdjustStock extends Component
                 },
                 'step' => in_array($product->unit->value, ['kg', 'g', 'l', 'ml'], true) ? '0.001' : '1',
                 'onHand' => $product->on_hand_quantity,
+                'stockStatus' => $product->stock_status,
                 'subtitle' => number_format($product->on_hand_quantity, 3, '.', ',').' '.match ($product->unit->value) {
                     'piece' => 'pcs',
                     'kg', 'g' => $product->unit->value,

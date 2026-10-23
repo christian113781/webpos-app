@@ -2,6 +2,7 @@
     id="main"
     tabindex="-1"
     class="flex-1 px-3 py-4 sm:px-6 sm:py-6 space-y-5 sm:space-y-6 max-w-[1600px] mx-auto w-full"
+    x-init="lines.forEach(line => { line.batchExpanded ??= false; line.batches ??= []; })"
     x-data="{
         products: @js($products),
         lines: $wire.entangle('lines'),
@@ -10,8 +11,62 @@
         discountDraft: '',
         discountError: '',
         nextId: 2,
+        nextBatchId: 1,
+        today: @js(now()->toDateString()),
+        selectedLoadProductIds: [],
+        loadLowStock: true,
+        loadOutOfStock: true,
+        loadAllProducts: false,
         productOf(id) {
             return this.products.find(product => String(product.id) === String(id)) ?? null;
+        },
+        filteredLoadProducts() {
+            return this.products.filter(product => {
+                const matchesStock = this.loadAllProducts
+                    || (product.stockStatus === 'low_stock' && this.loadLowStock)
+                    || (product.stockStatus === 'out_of_stock' && this.loadOutOfStock);
+
+                return matchesStock;
+            });
+        },
+        remainingLineSlots() {
+            return Math.max(50 - this.lines.filter(line => line.productId !== '').length, 0);
+        },
+        isProductAlreadyInOrder(productId) {
+            return this.lines.some(line => String(line.productId) === String(productId));
+        },
+        openLoadStock() {
+            this.selectedLoadProductIds = [];
+            this.$dispatch('open-modal', { name: 'purchase-order-load-stock' });
+        },
+        loadSelectedStock() {
+            const existingProductIds = new Set(this.lines.map(line => String(line.productId)).filter(Boolean));
+            const selectedProducts = this.products.filter(product =>
+                this.selectedLoadProductIds.includes(String(product.id))
+                && !existingProductIds.has(String(product.id))
+            );
+
+            selectedProducts.forEach(product => {
+                const emptyLine = this.lines.find(line => !line.productId);
+                const newLine = {
+                    id: emptyLine?.id ?? this.nextId++,
+                    productId: String(product.id),
+                    quantity: '',
+                    unitCost: String(product.costPrice),
+                    itemDiscount: '',
+                    batchExpanded: false,
+                    batches: [],
+                };
+
+                if (emptyLine) {
+                    Object.assign(emptyLine, newLine);
+                } else {
+                    this.lines.push(newLine);
+                }
+            });
+
+            this.selectedLoadProductIds = [];
+            this.$dispatch('close-modal', { name: 'purchase-order-load-stock' });
         },
         lineSubtotal(line) {
             return Math.max((Number(line.quantity) || 0) * (Number(line.unitCost) || 0) - (Number(line.itemDiscount) || 0), 0);
@@ -51,11 +106,54 @@
         formatMoney(value) {
             return '₱' + Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         },
+        defaultBatchName(line) {
+            const [year, month, day] = this.today.split('-').map(Number);
+            const dateLabel = new Date(year, month - 1, day).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+            });
+            const baseName = 'Batch ' + dateLabel;
+            let name = baseName;
+            let suffix = 2;
+
+            while (line.batches.some(batch => batch.name === name)) {
+                name = baseName + ' - ' + suffix++;
+            }
+
+            return name;
+        },
+        addBatch(line) {
+            line.batches.push({
+                id: this.nextBatchId++,
+                name: this.defaultBatchName(line),
+                quantity: '',
+                unitCost: line.unitCost || '',
+                receivedDate: this.today,
+                expiryDate: '',
+            });
+            line.batchExpanded = true;
+        },
+        toggleBatches(line) {
+            if (line.batchExpanded) {
+                line.batchExpanded = false;
+                return;
+            }
+
+            if (line.batches.length === 0) this.addBatch(line);
+            line.batchExpanded = true;
+        },
+        removeBatch(line, batchId) {
+            line.batches = line.batches.filter(batch => batch.id !== batchId);
+        },
         addLine() {
-            this.lines.push({ id: this.nextId++, productId: '', quantity: '', unitCost: '', itemDiscount: '' });
+            this.lines.push({ id: this.nextId++, productId: '', quantity: '', unitCost: '', itemDiscount: '', batchExpanded: false, batches: [] });
         },
         removeLine(id) {
             if (this.lines.length > 1) this.lines = this.lines.filter(line => line.id !== id);
+        },
+        clearItems() {
+            this.lines = [{ id: this.nextId++, productId: '', quantity: '', unitCost: '', itemDiscount: '', batchExpanded: false, batches: [] }];
         }
     }"
 >
@@ -186,13 +284,14 @@
                     </div>
                 </div>
 
-                <div class="hidden xl:grid grid-cols-[minmax(11rem,2fr)_minmax(5rem,.7fr)_minmax(5.5rem,.8fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_2.75rem] gap-3 border-y border-gray-100 bg-gray-50/60 px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500" aria-hidden="true">
+                <div class="hidden xl:grid grid-cols-[minmax(11rem,2fr)_minmax(5rem,.7fr)_minmax(5.5rem,.8fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(6rem,.8fr)_2.75rem] gap-3 border-y border-gray-100 bg-gray-50/60 px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500" aria-hidden="true">
                     <span>Item</span>
                     <span class="text-end">Stock</span>
                     <span>Quantity</span>
                     <span>Unit cost</span>
                     <span>Discount (₱)</span>
                     <span class="text-end">Total</span>
+                    <span class="text-center xl:col-span-2">Batches</span>
                     <span></span>
                 </div>
                 @php
@@ -211,7 +310,7 @@
 
                 <ul role="list" class="space-y-3 p-3 xl:space-y-0 xl:p-0 xl:divide-y xl:divide-gray-100">
                     <template x-for="(line, index) in lines" :key="line.id">
-                        <li class="grid grid-cols-2 gap-x-2 gap-y-3 rounded-xl border border-gray-100 bg-white p-3 sm:gap-x-3 sm:p-4 xl:grid-cols-[minmax(11rem,2fr)_minmax(5rem,.7fr)_minmax(5.5rem,.8fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_2.75rem] xl:items-start xl:gap-y-1 xl:rounded-none xl:border-0 xl:px-6 xl:py-3">
+                        <li class="grid grid-cols-2 gap-x-2 gap-y-3 rounded-xl border border-gray-100 bg-white p-3 sm:gap-x-3 sm:p-4 xl:grid-cols-[minmax(11rem,2fr)_minmax(5rem,.7fr)_minmax(5.5rem,.8fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(6rem,.8fr)_2.75rem] xl:items-start xl:gap-y-1 xl:rounded-none xl:border-0 xl:px-6 xl:py-3">
                             <div class="col-span-2 min-w-0 xl:col-span-1">
                                 <x-ui.lookup-select
                                     x-bind:id="'purchase-order-product-' + line.id"
@@ -285,34 +384,199 @@
                                 <span class="text-sm font-semibold tabular-nums text-gray-900" x-text="formatMoney(lineTotal(line))"></span>
                             </div>
 
-                            <div class="flex justify-end xl:pt-0.5">
+                            <div class="col-span-2 flex min-w-0 items-center justify-center gap-1 rounded-lg bg-gray-50 px-2.5 py-2 sm:px-3 xl:col-span-2 xl:bg-transparent xl:px-0 xl:py-0">
+                                <span class="text-xs font-medium text-gray-500 xl:hidden">Batches</span>
+                                <button
+                                    type="button"
+                                    x-show="line.productId"
+                                    x-cloak
+                                    @click="toggleBatches(line)"
+                                    :aria-expanded="line.batchExpanded"
+                                    :aria-label="line.batchExpanded ? 'Hide batches' : 'Show batches'"
+                                    :title="line.batchExpanded ? 'Hide batches' : 'Show batches'"
+                                    :aria-controls="'purchase-order-batches-' + line.id"
+                                    class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-1"
+                                >
+                                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            stroke-width="2"
+                                            :d="line.batchExpanded ? 'M5 12h14' : 'M12 5v14M5 12h14'"
+                                        />
+                                    </svg>
+                                </button>
                                 <button
                                     type="button"
                                     @click="removeLine(line.id)"
                                     :disabled="lines.length === 1"
                                     :aria-label="'Remove item ' + (index + 1)"
-                                    class="inline-flex h-11 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500 xl:w-11 xl:px-0"
+                                    class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500"
                                 >
                                     <x-ui.icon name="trash" class="h-4 w-4" />
-                                    <span class="xl:hidden">Remove item</span>
+                                </button>
+                            </div>
+
+                            <div
+                                x-show="line.batchExpanded"
+                                x-cloak
+                                :id="'purchase-order-batches-' + line.id"
+                                class="col-span-2 border-t border-gray-100 pt-3 xl:col-span-full"
+                            >
+                                <div
+                                    class="mb-2 flex items-center justify-between gap-3"
+                                >
+                                    <h3 class="text-sm font-semibold text-gray-700">Batches</h3>
+                                    <button
+                                        type="button"
+                                        @click="line.batchExpanded = false"
+                                        class="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-100"
+                                    >
+                                        <x-ui.icon name="chevron-up" class="h-4 w-4" />
+                                        Hide
+                                    </button>
+                                </div>
+
+                                <div class="hidden gap-2 px-3 pb-2 text-xs font-semibold text-gray-500 lg:grid lg:grid-cols-[1.5rem_minmax(0,1fr)]">
+                                    <span></span>
+                                    <div class="grid grid-cols-[minmax(10rem,1.4fr)_minmax(5rem,.5fr)_minmax(6rem,.7fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_2rem] gap-3">
+                                        <span>Batch Name</span>
+                                        <span>Quantity</span>
+                                        <span>Unit Cost</span>
+                                        <span>Received Date</span>
+                                        <span>Expiration Date</span>
+                                        <span></span>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-1">
+                                    <template x-for="(batch, batchIndex) in line.batches" :key="batch.id">
+                                        <div class="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2 rounded-lg border border-gray-100 bg-gray-50 p-3 lg:border-0 lg:bg-transparent lg:p-0">
+                                            <div class="flex justify-center pt-2 text-gray-400" aria-hidden="true">
+                                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 3v8a4 4 0 004 4h9m-4-4l4 4-4 4" />
+                                                </svg>
+                                            </div>
+                                            <div class="grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-[minmax(10rem,1.4fr)_minmax(5rem,.5fr)_minmax(6rem,.7fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_2rem] lg:items-end">
+                                                <div class="col-span-2 min-w-0 lg:col-span-1">
+                                                    <label :for="'purchase-order-batch-name-' + line.id + '-' + batch.id" class="mb-1.5 block text-xs font-semibold text-gray-600 lg:sr-only">
+                                                        Batch Name
+                                                    </label>
+                                                    <input
+                                                        :id="'purchase-order-batch-name-' + line.id + '-' + batch.id"
+                                                        type="text"
+                                                        class="field"
+                                                        x-model="batch.name"
+                                                        placeholder="Enter batch name"
+                                                    >
+                                                </div>
+                                                <div class="min-w-0">
+                                                    <label :for="'purchase-order-batch-quantity-' + line.id + '-' + batch.id" class="mb-1.5 block text-xs font-semibold text-gray-600 lg:sr-only">
+                                                        Quantity
+                                                    </label>
+                                                    <input
+                                                        :id="'purchase-order-batch-quantity-' + line.id + '-' + batch.id"
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.001"
+                                                        class="field"
+                                                        x-model="batch.quantity"
+                                                        placeholder="0"
+                                                        inputmode="decimal"
+                                                    >
+                                                </div>
+                                                <div class="min-w-0">
+                                                    <label :for="'purchase-order-batch-cost-' + line.id + '-' + batch.id" class="mb-1.5 block text-xs font-semibold text-gray-600 lg:sr-only">
+                                                        Unit Cost
+                                                    </label>
+                                                    <input
+                                                        :id="'purchase-order-batch-cost-' + line.id + '-' + batch.id"
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        class="field"
+                                                        x-model="batch.unitCost"
+                                                        placeholder="0.00"
+                                                        inputmode="decimal"
+                                                    >
+                                                </div>
+                                                <div class="min-w-0">
+                                                    <label :for="'purchase-order-batch-received-' + line.id + '-' + batch.id" class="mb-1.5 block text-xs font-semibold text-gray-600 lg:sr-only">
+                                                        Received Date
+                                                    </label>
+                                                    <input
+                                                        :id="'purchase-order-batch-received-' + line.id + '-' + batch.id"
+                                                        type="date"
+                                                        class="field"
+                                                        x-model="batch.receivedDate"
+                                                    >
+                                                </div>
+                                                <div class="min-w-0">
+                                                    <label :for="'purchase-order-batch-expiry-' + line.id + '-' + batch.id" class="mb-1.5 block text-xs font-semibold text-gray-600 lg:sr-only">
+                                                        Expiration Date
+                                                    </label>
+                                                    <input
+                                                        :id="'purchase-order-batch-expiry-' + line.id + '-' + batch.id"
+                                                        type="date"
+                                                        class="field"
+                                                        x-model="batch.expiryDate"
+                                                    >
+                                                </div>
+                                                <div class="col-span-2 flex justify-end lg:col-span-1 lg:justify-center">
+                                                    <button
+                                                        type="button"
+                                                        @click="removeBatch(line, batch.id)"
+                                                        :aria-label="'Remove batch ' + (batchIndex + 1)"
+                                                        class="inline-flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 opacity-60 transition-colors hover:bg-red-50 hover:text-red-600 hover:opacity-100 focus-visible:opacity-100"
+                                                    >
+                                                        <x-ui.icon name="x" class="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    @click="addBatch(line)"
+                                    class="mt-2 inline-flex min-h-9 items-center gap-2 rounded-lg px-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100"
+                                >
+                                    <x-ui.icon name="plus" class="h-4 w-4" />
+                                    Add batch
                                 </button>
                             </div>
                         </li>
                     </template>
                 </ul>
 
-                <div class="flex flex-col gap-2 border-t border-gray-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div class="flex flex-wrap items-center gap-2 border-t border-gray-100 px-3 py-3 sm:px-6">
                     <button
                         type="button"
                         @click="addLine()"
-                        class="inline-flex min-h-11 items-center gap-2 rounded-xl bg-brand-50 px-4 py-2 text-sm font-semibold text-brand-700 transition-colors hover:bg-brand-100"
+                        class="inline-flex min-h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50"
                     >
-                        <x-ui.icon name="plus" class="h-4 w-4" />
+                        <x-ui.icon name="plus" class="h-3.5 w-3.5" />
                         Add new line
                     </button>
-                    @if ($products->isEmpty())
-                        <p class="text-xs text-amber-700 sm:basis-full" role="status">There are no active products available to order.</p>
-                    @endif
+                    <button
+                        type="button"
+                        @click="openLoadStock()"
+                        class="inline-flex min-h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-200"
+                    >
+                        <x-ui.icon name="inbox" class="h-3.5 w-3.5" />
+                        Load stock
+                    </button>
+                    <button
+                        type="button"
+                        x-show="lines.length >= 2"
+                        x-cloak
+                        @click="clearItems()"
+                        class="inline-flex min-h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                    >
+                        <x-ui.icon name="trash" class="h-4 w-4" />
+                        Clear items
+                    </button>
                 </div>
         </section>
 
@@ -358,6 +622,92 @@
             </div>
         </section>
     </section>
+
+    <x-ui.modal
+        name="purchase-order-load-stock"
+        title="Load stock"
+        subtitle="Select multiple products to add to this purchase order."
+        max-width="lg"
+    >
+        <div class="space-y-4">
+            <fieldset class="space-y-2">
+                <legend class="text-xs font-semibold uppercase tracking-wide text-gray-500">Stock status</legend>
+                <label class="flex min-h-8 items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" x-model="loadLowStock" class="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500">
+                    Low stock
+                </label>
+                <label class="flex min-h-8 items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" x-model="loadOutOfStock" class="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500">
+                    Out of stock
+                </label>
+                <label class="flex min-h-8 items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" x-model="loadAllProducts" class="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500">
+                    All items (ignore stock status)
+                </label>
+            </fieldset>
+
+            <div class="max-h-72 overflow-y-auto rounded-xl border border-gray-100">
+                <template x-for="product in filteredLoadProducts()" :key="'load-stock-product-' + product.id">
+                    <label class="flex cursor-pointer items-start gap-3 border-b border-gray-100 px-3 py-3 last:border-b-0 hover:bg-gray-50">
+                        <input
+                            type="checkbox"
+                            x-model="selectedLoadProductIds"
+                            :value="String(product.id)"
+                            :disabled="isProductAlreadyInOrder(product.id) || (!selectedLoadProductIds.includes(String(product.id)) && selectedLoadProductIds.length >= remainingLineSlots())"
+                            class="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                        >
+                        <span class="min-w-0 flex-1">
+                            <span class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                                <span class="truncate text-sm font-semibold text-gray-800" x-text="product.name"></span>
+                                <span
+                                    class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                                    :class="{
+                                        'bg-amber-50 text-amber-700': product.stockStatus === 'low_stock',
+                                        'bg-red-50 text-red-700': product.stockStatus === 'out_of_stock',
+                                        'bg-gray-100 text-gray-500': product.stockStatus === 'in_stock' || product.stockStatus === 'not_tracked'
+                                    }"
+                                    x-text="product.stockStatus === 'not_tracked' ? 'Not tracked' : product.stockStatus.replaceAll('_', ' ')"
+                                ></span>
+                            </span>
+                            <span class="mt-1 flex flex-wrap gap-x-3 text-xs text-gray-500">
+                                <span x-text="product.subtitle"></span>
+                                <span x-show="product.trackInventory" x-text="'On hand: ' + Number(product.onHand).toLocaleString('en-PH') + ' ' + product.unit"></span>
+                                <span x-show="product.trackInventory" x-text="'Reorder level: ' + Number(product.reorderLevel).toLocaleString('en-PH') + ' ' + product.unit"></span>
+                            </span>
+                            <span
+                                x-show="isProductAlreadyInOrder(product.id)"
+                                class="mt-1 block text-xs text-gray-400"
+                            >Already added to this order</span>
+                        </span>
+                    </label>
+                </template>
+                <p
+                    x-show="filteredLoadProducts().length === 0"
+                    class="px-4 py-8 text-center text-sm text-gray-500"
+                >No products match these filters.</p>
+            </div>
+
+            <p class="text-xs text-gray-500" aria-live="polite">
+                <span x-text="selectedLoadProductIds.length"></span> selected
+                <span class="mx-1" aria-hidden="true">·</span>
+                Quantities are left blank for you to enter.
+            </p>
+        </div>
+        <x-slot:footer>
+            <x-ui.button
+                variant="secondary"
+                x-on:click="$dispatch('close-modal', { name: 'purchase-order-load-stock' })"
+            >
+                Cancel
+            </x-ui.button>
+            <x-ui.button
+                x-on:click="loadSelectedStock()"
+                x-bind:disabled="selectedLoadProductIds.length === 0"
+            >
+                Load selected
+            </x-ui.button>
+        </x-slot:footer>
+    </x-ui.modal>
 
     <x-ui.modal
         name="purchase-order-discount"

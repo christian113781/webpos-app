@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{{ isset($title) ? $title . ' — TalipapaPOS' : 'TalipapaPOS' }}</title>
-  <link rel="icon" type="image/png" href="{{ Vite::asset('resources/img/favicon.png') }}">
+  <link rel="icon" type="image/png" href="{{ asset('talipapapos/assets/img/favicon.png') }}">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

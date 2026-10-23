@@ -10,8 +10,56 @@
         notes: $wire.entangle('notes'),
         lines: $wire.entangle('lines'),
         nextId: 2,
+        selectedLoadProductIds: [],
+        loadLowStock: true,
+        loadOutOfStock: true,
+        loadAllProducts: false,
         productOf(id) {
             return this.products.find(product => Number(product.id) === Number(id)) ?? null;
+        },
+        filteredLoadProducts() {
+            return this.products.filter(product => {
+                const matchesStock = this.loadAllProducts
+                    || (product.stockStatus === 'low_stock' && this.loadLowStock)
+                    || (product.stockStatus === 'out_of_stock' && this.loadOutOfStock);
+
+                return matchesStock;
+            });
+        },
+        remainingLineSlots() {
+            return Math.max(50 - this.lines.filter(line => line.productId !== '').length, 0);
+        },
+        isProductAlreadyInAdjustment(productId) {
+            return this.lines.some(line => String(line.productId) === String(productId));
+        },
+        openLoadStock() {
+            this.selectedLoadProductIds = [];
+            this.$dispatch('open-modal', { name: 'adjustment-load-stock' });
+        },
+        loadSelectedStock() {
+            const selectedProducts = this.products.filter(product =>
+                this.selectedLoadProductIds.includes(String(product.id))
+                && !this.isProductAlreadyInAdjustment(product.id)
+            );
+
+            selectedProducts.forEach(product => {
+                const emptyLine = this.lines.find(line => !line.productId);
+                const newLine = {
+                    id: emptyLine?.id ?? this.nextId++,
+                    productId: String(product.id),
+                    quantity: '',
+                    reason: '',
+                };
+
+                if (emptyLine) {
+                    Object.assign(emptyLine, newLine);
+                } else {
+                    this.lines.push(newLine);
+                }
+            });
+
+            this.selectedLoadProductIds = [];
+            this.$dispatch('close-modal', { name: 'adjustment-load-stock' });
         },
         stockAfter(line) {
             const product = this.productOf(line.productId);
@@ -37,13 +85,16 @@
                 this.lines = this.lines.filter(line => line.id !== id);
             }
         },
+        clearItems() {
+            this.lines = [{ id: this.nextId++, productId: '', quantity: '', reason: '' }];
+        },
         productAlreadyAdded(line, productId) {
             return this.lines.some(item => item.id !== line.id && Number(item.productId) === Number(productId));
         }
     }"
 >
     <div class="min-w-0">
-        <h1 class="text-xl sm:text-2xl font-bold text-gray-900 mt-1">Adjust Stock</h1>
+        <h1 class="text-xl sm:text-2xl font-bold text-gray-900 mt-1">Stock Adjustment</h1>
         <p class="text-sm text-gray-500 mt-0.5">Record stock changes for one or more products in a single adjustment.</p>
     </div>
 
@@ -63,7 +114,7 @@
             <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 p-4 sm:p-6 pb-4">
                 <div class="min-w-0">
                     <h2 id="adjustment-items-heading" class="text-base font-bold text-gray-900">
-                        Items to Adjust
+                        Items
                         <span class="text-gray-400 font-normal text-sm" x-text="'(' + lines.length + ')'"></span>
                     </h2>
                     <p class="text-sm text-gray-500 mt-0.5">Choose a product, then enter how many to add or remove.</p>
@@ -177,14 +228,29 @@
                 </template>
             </ul>
 
-            <div class="px-4 sm:px-6 py-3 border-t border-gray-100">
-                <button type="button" @click="addLine()" class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-brand-700 bg-brand-50 hover:bg-brand-100 transition-colors min-h-11">
+            <div class="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 border-t border-gray-100">
+                <button type="button" @click="addLine()" class="inline-flex min-h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-50">
                     <x-ui.icon name="plus" class="w-4 h-4" />
                     Add new line
                 </button>
-                @if ($products->isEmpty())
-                    <p class="mt-2 text-xs text-amber-700" role="status">There are no active inventory-tracked products available to adjust.</p>
-                @endif
+                <button
+                    type="button"
+                    @click="openLoadStock()"
+                    class="inline-flex min-h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-200"
+                >
+                    <x-ui.icon name="inbox" class="w-3.5 h-3.5" />
+                    Load stock
+                </button>
+                <button
+                    type="button"
+                    x-show="lines.length >= 2"
+                    x-cloak
+                    @click="clearItems()"
+                    class="inline-flex min-h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                >
+                    <x-ui.icon name="trash" class="w-4 h-4" />
+                    Clear items
+                </button>
             </div>
 
             <div class="px-4 sm:px-6 pb-5 border-t border-gray-100 pt-4">
@@ -223,10 +289,86 @@
                         Cancel
                     </x-ui.button>
                     <x-ui.button type="submit" target="save">
-                        Save Adjustment
+                        Save
                     </x-ui.button>
                 </div>
             </div>
         </section>
     </form>
+
+    <x-ui.modal
+        name="adjustment-load-stock"
+        title="Load stock"
+        subtitle="Select multiple products to add to this stock adjustment."
+        max-width="lg"
+    >
+        <div class="space-y-4">
+            <fieldset class="space-y-2">
+                <legend class="text-xs font-semibold uppercase tracking-wide text-gray-500">Stock status</legend>
+                <label class="flex min-h-8 items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" x-model="loadLowStock" class="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500">
+                    Low stock
+                </label>
+                <label class="flex min-h-8 items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" x-model="loadOutOfStock" class="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500">
+                    Out of stock
+                </label>
+                <label class="flex min-h-8 items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" x-model="loadAllProducts" class="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500">
+                    All items (ignore stock status)
+                </label>
+            </fieldset>
+
+            <div class="max-h-72 overflow-y-auto rounded-xl border border-gray-100">
+                <template x-for="product in filteredLoadProducts()" :key="'adjustment-load-product-' + product.id">
+                    <label class="flex cursor-pointer items-start gap-3 border-b border-gray-100 px-3 py-3 last:border-b-0 hover:bg-gray-50">
+                        <input
+                            type="checkbox"
+                            x-model="selectedLoadProductIds"
+                            :value="String(product.id)"
+                            :disabled="isProductAlreadyInAdjustment(product.id) || (!selectedLoadProductIds.includes(String(product.id)) && selectedLoadProductIds.length >= remainingLineSlots())"
+                            class="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+                        >
+                        <span class="min-w-0 flex-1">
+                            <span class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                                <span class="truncate text-sm font-semibold text-gray-800" x-text="product.name"></span>
+                                <span
+                                    class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                                    :class="{
+                                        'bg-amber-50 text-amber-700': product.stockStatus === 'low_stock',
+                                        'bg-red-50 text-red-700': product.stockStatus === 'out_of_stock',
+                                        'bg-gray-100 text-gray-500': product.stockStatus === 'in_stock'
+                                    }"
+                                    x-text="product.stockStatus.replaceAll('_', ' ')"
+                                ></span>
+                            </span>
+                            <span class="mt-1 block text-xs text-gray-500" x-text="'Current stock: ' + product.subtitle"></span>
+                            <span x-show="isProductAlreadyInAdjustment(product.id)" class="mt-1 block text-xs text-gray-400">Already added to this adjustment</span>
+                        </span>
+                    </label>
+                </template>
+                <p x-show="filteredLoadProducts().length === 0" class="px-4 py-8 text-center text-sm text-gray-500">
+                    No products match these filters.
+                </p>
+            </div>
+
+            <p class="text-xs text-gray-500" aria-live="polite">
+                <span x-text="selectedLoadProductIds.length"></span> selected.
+            </p>
+        </div>
+        <x-slot:footer>
+            <x-ui.button
+                variant="secondary"
+                x-on:click="$dispatch('close-modal', { name: 'adjustment-load-stock' })"
+            >
+                Cancel
+            </x-ui.button>
+            <x-ui.button
+                x-on:click="loadSelectedStock()"
+                x-bind:disabled="selectedLoadProductIds.length === 0"
+            >
+                Load selected
+            </x-ui.button>
+        </x-slot:footer>
+    </x-ui.modal>
 </main>
