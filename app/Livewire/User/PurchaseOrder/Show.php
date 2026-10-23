@@ -82,12 +82,16 @@ class Show extends Component
                             ]);
                         }
 
-                        InventoryMovement::create([
-                            'product_id' => $productId,
-                            'type' => 'stock_out',
-                            'quantity' => $quantity,
-                            'notes' => 'Voided purchase order '.$purchaseOrder->reference,
-                        ]);
+                        $productReceipts = $receiptMovements->where('product_id', $productId);
+                        foreach ($productReceipts->groupBy('product_batch_id') as $productBatchId => $batchMovements) {
+                            InventoryMovement::create([
+                                'product_id' => $productId,
+                                'product_batch_id' => $productBatchId ?: null,
+                                'type' => 'stock_out',
+                                'quantity' => $batchMovements->sum('quantity'),
+                                'notes' => 'Voided purchase order '.$purchaseOrder->reference,
+                            ]);
+                        }
                     }
                 }
             }
@@ -110,7 +114,7 @@ class Show extends Component
     {
         return view('livewire.user.purchase-order.show', [
             'purchaseOrder' => PurchaseOrder::query()
-                ->with(['supplier', 'items.product'])
+                ->with(['supplier', 'items.product', 'items.batches'])
                 ->findOrFail($this->purchaseOrderId),
         ]);
     }

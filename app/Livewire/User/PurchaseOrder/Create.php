@@ -3,9 +3,9 @@
 namespace App\Livewire\User\PurchaseOrder;
 
 use App\Enums\ProductUnit;
-use App\Models\Expense;
 use App\Models\InventoryMovement;
 use App\Models\Product;
+use App\Models\ProductBatch;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use Illuminate\Support\Facades\DB;
@@ -37,7 +37,7 @@ class Create extends Component
     public bool $createExpense = false;
 
     public array $lines = [
-        ['id' => 1, 'productId' => '', 'quantity' => '', 'unitCost' => '', 'itemDiscount' => ''],
+        ['id' => 1, 'productId' => '', 'quantity' => '', 'unitCost' => '', 'itemDiscount' => '', 'batches' => []],
     ];
 
     public function mount(): void
@@ -48,7 +48,7 @@ class Create extends Component
 
     protected function rules(): array
     {
-        return [
+        $rules = [
             'transactionDate' => ['required', 'date'],
             'supplierId' => [
                 'required',
@@ -63,15 +63,45 @@ class Create extends Component
             'notes' => ['nullable', 'string', 'max:5000'],
             'createExpense' => ['boolean'],
             'lines' => ['required', 'array', 'min:1', 'max:50'],
+            'lines.*' => ['array'],
             'lines.*.productId' => [
                 'required',
                 'integer',
                 'distinct',
                 Rule::exists('products', 'id')->where(fn ($query) => $query->where('status', 'active')),
             ],
-            'lines.*.quantity' => ['required', 'numeric', 'decimal:0,3', 'min:0.001', 'max:999999999.999'],
-            'lines.*.unitCost' => ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999.99'],
             'lines.*.itemDiscount' => ['nullable', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999.99'],
+        ];
+
+        foreach ($this->lines as $index => $line) {
+            $batches = is_array($line) && is_array($line['batches'] ?? null) ? $line['batches'] : [];
+            $rules["lines.{$index}.batches"] = ['nullable', 'array', 'max:100'];
+
+            if ($batches !== []) {
+                $rules["lines.{$index}.quantity"] = ['nullable'];
+                $rules["lines.{$index}.unitCost"] = ['nullable'];
+                $rules["lines.{$index}.batches.*.batchNumber"] = ['required', 'string', 'max:255', 'distinct'];
+                $rules["lines.{$index}.batches.*.quantity"] = ['required', 'numeric', 'decimal:0,3', 'gt:0', 'max:999999999.999'];
+                $rules["lines.{$index}.batches.*.unitCost"] = ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999.99'];
+                $rules["lines.{$index}.batches.*.receivedDate"] = ['required', 'date'];
+                $rules["lines.{$index}.batches.*.expiryDate"] = ['nullable', 'date'];
+            } else {
+                $rules["lines.{$index}.quantity"] = ['required', 'numeric', 'decimal:0,3', 'gt:0', 'max:999999999.999'];
+                $rules["lines.{$index}.unitCost"] = ['required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999.99'];
+            }
+        }
+
+        return $rules;
+    }
+
+    protected function messages(): array
+    {
+        return [
+            'lines.*.batches.*.batchNumber.required' => 'Enter a batch number for every batch.',
+            'lines.*.batches.*.quantity.required' => 'Enter a quantity for every batch.',
+            'lines.*.batches.*.quantity.gt' => 'Batch quantity must be greater than zero.',
+            'lines.*.batches.*.unitCost.required' => 'Enter a unit cost for every batch.',
+            'lines.*.batches.*.receivedDate.required' => 'Enter a received date for every batch.',
         ];
     }
 
@@ -126,23 +156,63 @@ class Create extends Component
 
             foreach ($validated['lines'] as $index => $line) {
                 $product = $products->get((int) $line['productId']);
-                $quantity = (float) $line['quantity'];
-                $unitCost = (float) $line['unitCost'];
                 $itemDiscount = round((float) ($line['itemDiscount'] ?? 0), 2);
-                $requiresWholeNumber = ! in_array($product->unit->value, [
-                    ProductUnit::Kilogram->value,
-                    ProductUnit::Gram->value,
-                    ProductUnit::Liter->value,
-                    ProductUnit::Milliliter->value,
-                ], true);
+                $batchData = [];
+                if (! empty($line['batches'])) {
+                    $quantity = 0;
+                    $batchGrossTotal = 0;
+                    foreach ($line['batches'] as $batchIndex => $batch) {
+                        $batchQuantity = (float) $batch['quantity'];
+                        $batchUnitCost = (float) $batch['unitCost'];
+                        $requiresWholeNumber = ! in_array($product->unit->value, [
+                            ProductUnit::Kilogram->value,
+                            ProductUnit::Gram->value,
+                            ProductUnit::Liter->value,
+                            ProductUnit::Milliliter->value,
+                        ], true);
 
-                if ($requiresWholeNumber && floor($quantity) !== $quantity) {
-                    throw ValidationException::withMessages([
-                        "lines.{$index}.quantity" => 'Enter a whole number for '.$product->unit->label().'.',
-                    ]);
+                        if ($requiresWholeNumber && floor($batchQuantity) !== $batchQuantity) {
+                            throw ValidationException::withMessages([
+                                "lines.{$index}.batches.{$batchIndex}.quantity" => 'Enter a whole number for '.$product->unit->label().'.',
+                            ]);
+                        }
+
+                        $quantity += $batchQuantity;
+                        $batchGrossTotal = round($batchGrossTotal + ($batchQuantity * $batchUnitCost), 2);
+                        $batchData[] = [
+                            'batch_number' => trim($batch['batchNumber']),
+                            'quantity' => $batchQuantity,
+                            'unit_cost' => $batchUnitCost,
+                            'received_date' => $batch['receivedDate'],
+                            'expiry_date' => $batch['expiryDate'] ?: null,
+                        ];
+                    }
+                    $unitCost = $quantity > 0 ? round($batchGrossTotal / $quantity, 2) : 0;
+                    $grossTotal = $batchGrossTotal;
+                    if ($quantity > 999999999.999) {
+                        throw ValidationException::withMessages([
+                            "lines.{$index}.batches" => 'The combined batch quantity exceeds the allowed amount.',
+                        ]);
+                    }
+                } else {
+                    $quantity = (float) $line['quantity'];
+                    $unitCost = (float) $line['unitCost'];
+                    $grossTotal = round($quantity * $unitCost, 2);
+
+                    $requiresWholeNumber = ! in_array($product->unit->value, [
+                        ProductUnit::Kilogram->value,
+                        ProductUnit::Gram->value,
+                        ProductUnit::Liter->value,
+                        ProductUnit::Milliliter->value,
+                    ], true);
+
+                    if ($requiresWholeNumber && floor($quantity) !== $quantity) {
+                        throw ValidationException::withMessages([
+                            "lines.{$index}.quantity" => 'Enter a whole number for '.$product->unit->label().'.',
+                        ]);
+                    }
                 }
 
-                $grossTotal = round($quantity * $unitCost, 2);
                 if ($grossTotal > 9999999999.99) {
                     throw ValidationException::withMessages([
                         "lines.{$index}.quantity" => 'The line total exceeds the allowed amount.',
@@ -163,6 +233,7 @@ class Create extends Component
                     'unit_cost' => $unitCost,
                     'item_discount' => $itemDiscount,
                     'total' => $lineTotal,
+                    'batches' => $batchData,
                 ];
             }
 
@@ -199,21 +270,53 @@ class Create extends Component
             $reference = 'P'.str_pad((string) $purchaseOrder->id, 6, '0', STR_PAD_LEFT);
             $purchaseOrder->update(['reference' => $reference]);
 
-            $purchaseOrder->items()->createMany($lineData);
+            foreach ($lineData as $line) {
+                $batches = $line['batches'] ?? [];
+                unset($line['batches']);
+                $item = $purchaseOrder->items()->create($line);
+                if ($batches !== []) {
+                    $item->batches()->createMany($batches);
+                }
+            }
 
             if ($status === 'received') {
-                foreach ($lineData as $line) {
-                    $product = $products->get($line['product_id']);
+                foreach ($purchaseOrder->items()->with(['product', 'batches'])->get() as $item) {
+                    $product = $item->product;
                     if (! $product->track_inventory) {
                         continue;
                     }
 
-                    InventoryMovement::create([
-                        'product_id' => $product->id,
-                        'type' => 'stock_in',
-                        'quantity' => $line['quantity'],
-                        'notes' => 'Received from purchase order '.$reference,
-                    ]);
+                    foreach ($item->batches as $itemBatch) {
+                        $productBatch = ProductBatch::query()->firstOrCreate(
+                            [
+                                'product_id' => $product->id,
+                                'batch_number' => $itemBatch->batch_number,
+                            ],
+                            [
+                                'unit_cost' => $itemBatch->unit_cost,
+                                'received_date' => $itemBatch->received_date,
+                                'expiry_date' => $itemBatch->expiry_date,
+                            ],
+                        );
+                        $itemBatch->update(['product_batch_id' => $productBatch->id]);
+
+                        InventoryMovement::create([
+                            'product_id' => $product->id,
+                            'product_batch_id' => $productBatch->id,
+                            'type' => 'stock_in',
+                            'quantity' => $itemBatch->quantity,
+                            'notes' => 'Received from purchase order '.$reference,
+                        ]);
+                    }
+
+                    if ($item->batches->isEmpty()) {
+                        InventoryMovement::create([
+                            'product_id' => $product->id,
+                            'type' => 'stock_in',
+                            'quantity' => $item->quantity,
+                            'notes' => 'Received from purchase order '.$reference,
+                        ]);
+                    }
                 }
             }
 
@@ -253,12 +356,13 @@ class Create extends Component
                     'inventoryMovements as stock_out_quantity' => fn ($query) => $query->where('type', 'stock_out'),
                 ], 'quantity')
                 ->orderBy('name')
-                ->get(['id', 'name', 'sku', 'cost_price', 'unit', 'reorder_level', 'track_inventory'])
+                ->get(['id', 'name', 'sku', 'cost_price', 'selling_price', 'unit', 'reorder_level', 'track_inventory'])
                 ->map(fn (Product $product): array => [
                     'id' => $product->id,
                     'name' => $product->name,
                     'subtitle' => trim(($product->sku ? $product->sku.' · ' : '').'₱'.number_format((float) $product->cost_price, 2).' / '.$product->unit->label()),
                     'costPrice' => (float) $product->cost_price,
+                    'sellingPrice' => (float) $product->selling_price,
                     'unit' => $product->unit->label(),
                     'onHand' => (float) ($product->stock_in_quantity ?? 0) - (float) ($product->stock_out_quantity ?? 0),
                     'reorderLevel' => (float) $product->reorder_level,

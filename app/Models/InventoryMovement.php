@@ -10,6 +10,7 @@ class InventoryMovement extends Model
 {
     protected $fillable = [
         'product_id',
+        'product_batch_id',
         'type',
         'quantity',
         'notes',
@@ -18,6 +19,11 @@ class InventoryMovement extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function productBatch(): BelongsTo
+    {
+        return $this->belongsTo(ProductBatch::class);
     }
 
     public function getDisplayTypeAttribute(): string

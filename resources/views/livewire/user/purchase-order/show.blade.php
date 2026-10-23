@@ -161,6 +161,30 @@
                                 <td class="px-3 py-4 text-end whitespace-nowrap text-gray-700">₱{{ number_format((float) $item->item_discount, 2) }}</td>
                                 <td class="px-5 py-4 text-end whitespace-nowrap font-semibold text-gray-900">₱{{ number_format((float) $item->total, 2) }}</td>
                             </tr>
+                            @if ($item->batches->isNotEmpty())
+                                <tr wire:key="purchase-order-item-batches-{{ $item->id }}">
+                                    <td colspan="5" class="bg-gray-50/70 px-8 py-3">
+                                        <div class="mb-1.5 grid grid-cols-[minmax(8rem,1.5fr)_minmax(5rem,.6fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)] gap-3 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                                            <span>Batch number</span>
+                                            <span>Quantity</span>
+                                            <span>Unit cost</span>
+                                            <span>Received date</span>
+                                            <span>Expiration date</span>
+                                        </div>
+                                        <ul class="space-y-1.5" aria-label="Batches for {{ $item->product?->name ?? 'Deleted product' }}">
+                                            @foreach ($item->batches as $batch)
+                                                <li class="grid grid-cols-[minmax(8rem,1.5fr)_minmax(5rem,.6fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)] gap-3 text-xs text-gray-600">
+                                                    <span class="font-medium text-gray-800">{{ $batch->batch_number }}</span>
+                                                    <span>{{ rtrim(rtrim(number_format((float) $batch->quantity, 3, '.', ','), '0'), '.') }}</span>
+                                                    <span>₱{{ number_format((float) $batch->unit_cost, 2) }}</span>
+                                                    <span>{{ $batch->received_date?->format('M d, Y') ?? '—' }}</span>
+                                                    <span>{{ $batch->expiry_date?->format('M d, Y') ?? 'No expiry' }}</span>
+                                                </li>
+                                            @endforeach
+                                        </ul>
+                                    </td>
+                                </tr>
+                            @endif
                         @endforeach
                     </tbody>
                 </table>
@@ -182,6 +206,21 @@
                         </div>
                         @if ((float) $item->item_discount > 0)
                             <p class="mt-2 text-xs text-gray-500">Item discount: ₱{{ number_format((float) $item->item_discount, 2) }}</p>
+                        @endif
+                        @if ($item->batches->isNotEmpty())
+                            <ul class="mt-3 space-y-2 border-s-2 border-gray-200 ps-3" aria-label="Batches for {{ $item->product?->name ?? 'Deleted product' }}">
+                                @foreach ($item->batches as $batch)
+                                    <li class="text-xs text-gray-600">
+                                        <p class="font-semibold text-gray-800">{{ $batch->batch_number }}</p>
+                                        <p>
+                                            {{ rtrim(rtrim(number_format((float) $batch->quantity, 3, '.', ','), '0'), '.') }}
+                                            × ₱{{ number_format((float) $batch->unit_cost, 2) }}
+                                            · Received {{ $batch->received_date?->format('M d, Y') ?? '—' }}
+                                            · Expires {{ $batch->expiry_date?->format('M d, Y') ?? 'never' }}
+                                        </p>
+                                    </li>
+                                @endforeach
+                            </ul>
                         @endif
                     </li>
                 @endforeach

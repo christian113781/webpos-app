@@ -11,12 +11,16 @@ class ProductBatch extends Model
     protected $fillable = [
         'product_id',
         'batch_number',
+        'unit_cost',
+        'received_date',
         'expiry_date',
     ];
 
     protected function casts(): array
     {
         return [
+            'unit_cost' => 'decimal:2',
+            'received_date' => 'date',
             'expiry_date' => 'date',
         ];
     }

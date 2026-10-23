@@ -6,6 +6,7 @@ use App\Livewire\User\PurchaseOrder\Create;
 use App\Models\Expense;
 use App\Models\InventoryMovement;
 use App\Models\Product;
+use App\Models\ProductBatch;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use App\Models\User;
@@ -39,9 +40,14 @@ class PurchaseOrderCreateTest extends TestCase
             ->set('lines', [[
                 'id' => 1,
                 'productId' => (string) $product->id,
-                'quantity' => '3',
-                'unitCost' => '100',
                 'itemDiscount' => '10',
+                'batches' => [[
+                    'batchNumber' => 'RICE-LOT-1',
+                    'quantity' => '3',
+                    'unitCost' => '100',
+                    'receivedDate' => '2026-10-22',
+                    'expiryDate' => '',
+                ]],
             ]])
             ->call('save')
             ->assertHasNoErrors()
@@ -83,9 +89,14 @@ class PurchaseOrderCreateTest extends TestCase
             ->set('lines', [[
                 'id' => 1,
                 'productId' => (string) $product->id,
-                'quantity' => '2',
-                'unitCost' => '125',
                 'itemDiscount' => '',
+                'batches' => [[
+                    'batchNumber' => 'RICE-DRAFT-LOT',
+                    'quantity' => '2',
+                    'unitCost' => '125',
+                    'receivedDate' => '2026-10-22',
+                    'expiryDate' => '',
+                ]],
             ]])
             ->call('saveAsDraft')
             ->assertHasNoErrors()
@@ -103,7 +114,7 @@ class PurchaseOrderCreateTest extends TestCase
         $this->assertSame(0, InventoryMovement::count());
     }
 
-    public function test_order_validation_prevents_inactive_products_and_fractional_piece_quantities(): void
+    public function test_order_validation_prevents_inactive_products_and_fractional_piece_batch_quantities(): void
     {
         $supplier = Supplier::create(['name' => 'Metro Wholesale']);
         $product = Product::create([
@@ -118,24 +129,35 @@ class PurchaseOrderCreateTest extends TestCase
             ->set('lines', [[
                 'id' => 1,
                 'productId' => (string) $product->id,
-                'quantity' => '1.5',
-                'unitCost' => '100',
                 'itemDiscount' => '',
+                'batches' => [[
+                    'batchNumber' => 'RICE-FRACTIONAL-LOT',
+                    'quantity' => '1.5',
+                    'unitCost' => '100',
+                    'receivedDate' => '2026-10-22',
+                    'expiryDate' => '',
+                ]],
             ]])
             ->call('save')
-            ->assertHasErrors(['lines.0.quantity']);
+            ->assertHasErrors(['lines.0.batches.0.quantity']);
 
         $product->update(['status' => 'inactive']);
 
         Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
             ->test(Create::class)
             ->set('supplierId', (string) $supplier->id)
+            ->set('status', 'received')
             ->set('lines', [[
                 'id' => 1,
                 'productId' => (string) $product->id,
-                'quantity' => '1',
-                'unitCost' => '100',
                 'itemDiscount' => '',
+                'batches' => [[
+                    'batchNumber' => 'INACTIVE-LOT',
+                    'quantity' => '1',
+                    'unitCost' => '100',
+                    'receivedDate' => '2026-10-22',
+                    'expiryDate' => '',
+                ]],
             ]])
             ->call('save')
             ->assertHasErrors(['lines.0.productId']);
@@ -168,15 +190,25 @@ class PurchaseOrderCreateTest extends TestCase
             ->set('lines', [[
                 'id' => 1,
                 'productId' => (string) $pieceProduct->id,
-                'quantity' => '2',
-                'unitCost' => '125',
                 'itemDiscount' => '',
+                'batches' => [[
+                    'batchNumber' => 'RICE-RECEIVED-LOT',
+                    'quantity' => '2',
+                    'unitCost' => '125',
+                    'receivedDate' => '2026-10-21',
+                    'expiryDate' => '',
+                ]],
             ], [
                 'id' => 2,
                 'productId' => (string) $weightProduct->id,
-                'quantity' => '1.5',
-                'unitCost' => '80',
                 'itemDiscount' => '',
+                'batches' => [[
+                    'batchNumber' => 'SUGAR-RECEIVED-LOT',
+                    'quantity' => '1.5',
+                    'unitCost' => '80',
+                    'receivedDate' => '2026-10-21',
+                    'expiryDate' => '',
+                ]],
             ]])
             ->call('save')
             ->assertHasNoErrors()
@@ -189,6 +221,7 @@ class PurchaseOrderCreateTest extends TestCase
         foreach ($movements as $movement) {
             $this->assertTrue($movement->created_at->between($receivedAt, now()));
         }
+
         $this->assertDatabaseHas('inventory_movements', [
             'product_id' => $pieceProduct->id,
             'type' => 'stock_in',
@@ -203,5 +236,134 @@ class PurchaseOrderCreateTest extends TestCase
         ]);
         $this->assertSame(2.0, (float) InventoryMovement::where('product_id', $pieceProduct->id)->sum('quantity'));
         $this->assertSame(1.5, (float) InventoryMovement::where('product_id', $weightProduct->id)->sum('quantity'));
+    }
+
+    public function test_purchase_order_derives_line_values_and_receives_each_batch(): void
+    {
+        $supplier = Supplier::create(['name' => 'Metro Wholesale']);
+        $product = Product::create([
+            'name' => 'Batch Juice',
+            'sku' => 'JUICE-BATCH',
+            'cost_price' => 8,
+            'selling_price' => 25,
+        ]);
+
+        Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
+            ->test(Create::class)
+            ->set('supplierId', (string) $supplier->id)
+            ->set('status', 'received')
+            ->set('lines', [[
+                'id' => 1,
+                'productId' => (string) $product->id,
+                'quantity' => '999',
+                'unitCost' => '999',
+                'itemDiscount' => '5',
+                'batches' => [
+                    [
+                        'batchNumber' => 'JUICE-LOT-1',
+                        'quantity' => '2',
+                        'unitCost' => '10',
+                        'receivedDate' => '2026-10-22',
+                        'expiryDate' => '2027-10-22',
+                    ],
+                    [
+                        'batchNumber' => 'JUICE-LOT-2',
+                        'quantity' => '3',
+                        'unitCost' => '20',
+                        'receivedDate' => '2026-10-23',
+                        'expiryDate' => '',
+                    ],
+                ],
+            ]])
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('user.purchase-orders'));
+
+        $purchaseOrder = PurchaseOrder::with('items.batches.productBatch')->sole();
+        $item = $purchaseOrder->items->sole();
+
+        $this->assertSame('5.000', $item->quantity);
+        $this->assertSame('16.00', $item->unit_cost);
+        $this->assertSame('5.00', $item->item_discount);
+        $this->assertSame('75.00', $item->total);
+        $this->assertSame('75.00', $purchaseOrder->subtotal);
+        $this->assertSame('25.00', $product->fresh()->selling_price);
+        $this->assertCount(2, $item->batches);
+        $this->assertCount(2, ProductBatch::all());
+        $this->assertDatabaseHas('inventory_movements', [
+            'product_id' => $product->id,
+            'product_batch_id' => $item->batches[0]->product_batch_id,
+            'type' => 'stock_in',
+            'quantity' => '2.000',
+        ]);
+        $this->assertDatabaseHas('inventory_movements', [
+            'product_id' => $product->id,
+            'product_batch_id' => $item->batches[1]->product_batch_id,
+            'type' => 'stock_in',
+            'quantity' => '3.000',
+        ]);
+    }
+
+    public function test_purchase_order_saves_main_quantity_without_adding_batches(): void
+    {
+        $supplier = Supplier::create(['name' => 'Metro Wholesale']);
+        $product = Product::create([
+            'name' => 'Batch Juice',
+            'sku' => 'JUICE-BATCH',
+        ]);
+
+        Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
+            ->test(Create::class)
+            ->set('supplierId', (string) $supplier->id)
+            ->set('status', 'received')
+            ->set('lines', [[
+                'id' => 1,
+                'productId' => (string) $product->id,
+                'itemDiscount' => '',
+                'quantity' => '4',
+                'unitCost' => '12.50',
+                'batches' => [],
+            ]])
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('user.purchase-orders'));
+
+        $item = PurchaseOrder::with('items.batches')->sole()->items->sole();
+        $this->assertSame('4.000', $item->quantity);
+        $this->assertSame('12.50', $item->unit_cost);
+        $this->assertSame(0, $item->batches->count());
+        $this->assertSame(0, ProductBatch::count());
+        $this->assertDatabaseHas('inventory_movements', [
+            'product_id' => $product->id,
+            'type' => 'stock_in',
+            'quantity' => '4.000',
+        ]);
+    }
+
+    public function test_purchase_order_reports_missing_batch_quantity_before_saving(): void
+    {
+        $supplier = Supplier::create(['name' => 'Metro Wholesale']);
+        $product = Product::create(['name' => 'Batch Juice']);
+
+        Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
+            ->test(Create::class)
+            ->set('supplierId', (string) $supplier->id)
+            ->set('lines', [[
+                'id' => 1,
+                'productId' => (string) $product->id,
+                'itemDiscount' => '',
+                'batches' => [[
+                    'batchNumber' => 'JUICE-LOT-1',
+                    'quantity' => '',
+                    'unitCost' => '10',
+                    'receivedDate' => '2026-10-23',
+                    'expiryDate' => '',
+                ]],
+            ]])
+            ->call('save')
+            ->assertHasErrors(['lines.0.batches.0.quantity'])
+            ->assertSee('Enter a quantity for every batch.');
+
+        $this->assertSame(0, PurchaseOrder::count());
     }
 }

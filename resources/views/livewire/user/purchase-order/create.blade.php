@@ -2,7 +2,7 @@
     id="main"
     tabindex="-1"
     class="flex-1 px-3 py-4 sm:px-6 sm:py-6 space-y-5 sm:space-y-6 max-w-[1600px] mx-auto w-full"
-    x-init="lines.forEach(line => { line.batchExpanded ??= false; line.batches ??= []; })"
+    x-init="lines.forEach(line => { line.batchExpanded ??= false; line.batches ??= []; line._previousProductId = String(line.productId || ''); })"
     x-data="{
         products: @js($products),
         lines: $wire.entangle('lines'),
@@ -19,6 +19,37 @@
         loadAllProducts: false,
         productOf(id) {
             return this.products.find(product => String(product.id) === String(id)) ?? null;
+        },
+        usesBatches(line) {
+            return Boolean(this.productOf(line.productId)) && (line.batches ?? []).length > 0;
+        },
+        resetChangedProduct(line) {
+            const productId = String(line.productId || '');
+            if (line._previousProductId === undefined) {
+                line._previousProductId = productId;
+                return;
+            }
+            if (line._previousProductId === productId) return;
+
+            line._previousProductId = productId;
+            line.quantity = '';
+            line.unitCost = String(this.productOf(productId)?.costPrice ?? '');
+            line.itemDiscount = '';
+            line.batches = [];
+            line.batchExpanded = false;
+        },
+        batchGrossTotal(line) {
+            return line.batches.reduce((sum, batch) =>
+                Math.round((sum + (Number(batch.quantity) || 0) * (Number(batch.unitCost) || 0)) * 100) / 100, 0);
+        },
+        syncBatchTotals(line) {
+            if (!this.usesBatches(line)) return;
+
+            const quantity = line.batches.reduce((sum, batch) => sum + (Number(batch.quantity) || 0), 0);
+            const gross = this.batchGrossTotal(line);
+
+            line.quantity = quantity > 0 ? quantity.toFixed(3) : '';
+            line.unitCost = quantity > 0 ? (gross / quantity).toFixed(2) : '';
         },
         filteredLoadProducts() {
             return this.products.filter(product => {
@@ -56,6 +87,7 @@
                     itemDiscount: '',
                     batchExpanded: false,
                     batches: [],
+                    _previousProductId: String(product.id),
                 };
 
                 if (emptyLine) {
@@ -69,7 +101,11 @@
             this.$dispatch('close-modal', { name: 'purchase-order-load-stock' });
         },
         lineSubtotal(line) {
-            return Math.max((Number(line.quantity) || 0) * (Number(line.unitCost) || 0) - (Number(line.itemDiscount) || 0), 0);
+            const gross = this.usesBatches(line)
+                ? this.batchGrossTotal(line)
+                : Math.round((Number(line.quantity) || 0) * (Number(line.unitCost) || 0) * 100) / 100;
+
+            return Math.max(gross - (Number(line.itemDiscount) || 0), 0);
         },
         lineTotal(line) {
             return this.lineSubtotal(line) * (1 - (Number(this.discount) || 0) / 100);
@@ -117,7 +153,7 @@
             let name = baseName;
             let suffix = 2;
 
-            while (line.batches.some(batch => batch.name === name)) {
+            while (line.batches.some(batch => batch.batchNumber === name)) {
                 name = baseName + ' - ' + suffix++;
             }
 
@@ -126,12 +162,13 @@
         addBatch(line) {
             line.batches.push({
                 id: this.nextBatchId++,
-                name: this.defaultBatchName(line),
+                batchNumber: this.defaultBatchName(line),
                 quantity: '',
-                unitCost: line.unitCost || '',
+                unitCost: line.unitCost || (this.productOf(line.productId)?.costPrice ?? ''),
                 receivedDate: this.today,
                 expiryDate: '',
             });
+            this.syncBatchTotals(line);
             line.batchExpanded = true;
         },
         toggleBatches(line) {
@@ -145,15 +182,16 @@
         },
         removeBatch(line, batchId) {
             line.batches = line.batches.filter(batch => batch.id !== batchId);
+            this.syncBatchTotals(line);
         },
         addLine() {
-            this.lines.push({ id: this.nextId++, productId: '', quantity: '', unitCost: '', itemDiscount: '', batchExpanded: false, batches: [] });
+            this.lines.push({ id: this.nextId++, productId: '', quantity: '', unitCost: '', itemDiscount: '', batchExpanded: false, batches: [], _previousProductId: '' });
         },
         removeLine(id) {
             if (this.lines.length > 1) this.lines = this.lines.filter(line => line.id !== id);
         },
         clearItems() {
-            this.lines = [{ id: this.nextId++, productId: '', quantity: '', unitCost: '', itemDiscount: '', batchExpanded: false, batches: [] }];
+            this.lines = [{ id: this.nextId++, productId: '', quantity: '', unitCost: '', itemDiscount: '', batchExpanded: false, batches: [], _previousProductId: '' }];
         }
     }"
 >
@@ -243,7 +281,7 @@
                             Items to Order
                             <span class="text-sm font-normal text-gray-400" x-text="'(' + lines.length + ')'"></span>
                         </h2>
-                        <p class="mt-0.5 text-sm text-gray-500">Choose products, review stock, and enter quantities, costs, and item discounts.</p>
+                        <p class="mt-0.5 text-sm text-gray-500">Enter quantity and unit cost directly, or use + to split the item into batches.</p>
                     </div>
                     <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
                         <span
@@ -284,13 +322,14 @@
                     </div>
                 </div>
 
-                <div class="hidden xl:grid grid-cols-[minmax(11rem,2fr)_minmax(5rem,.7fr)_minmax(5.5rem,.8fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(6rem,.8fr)_2.75rem] gap-3 border-y border-gray-100 bg-gray-50/60 px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500" aria-hidden="true">
+                <div class="hidden xl:grid xl:grid-cols-[minmax(11rem,2fr)_minmax(4.5rem,.7fr)_minmax(5rem,.7fr)_minmax(6rem,.9fr)_minmax(6rem,.9fr)_minmax(6rem,.8fr)_minmax(6rem,.8fr)_2.25rem_2.75rem] gap-3 border-y border-gray-100 bg-gray-50/60 px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-gray-500" aria-hidden="true">
                     <span>Item</span>
                     <span class="text-end">Stock</span>
                     <span>Quantity</span>
                     <span>Unit cost</span>
                     <span>Discount (₱)</span>
                     <span class="text-end">Total</span>
+                    <span>Selling price</span>
                     <span class="text-center xl:col-span-2">Batches</span>
                     <span></span>
                 </div>
@@ -310,7 +349,10 @@
 
                 <ul role="list" class="space-y-3 p-3 xl:space-y-0 xl:p-0 xl:divide-y xl:divide-gray-100">
                     <template x-for="(line, index) in lines" :key="line.id">
-                        <li class="grid grid-cols-2 gap-x-2 gap-y-3 rounded-xl border border-gray-100 bg-white p-3 sm:gap-x-3 sm:p-4 xl:grid-cols-[minmax(11rem,2fr)_minmax(5rem,.7fr)_minmax(5.5rem,.8fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(7rem,1fr)_minmax(6rem,.8fr)_2.75rem] xl:items-start xl:gap-y-1 xl:rounded-none xl:border-0 xl:px-6 xl:py-3">
+                        <li
+                            x-effect="resetChangedProduct(line)"
+                            class="grid grid-cols-2 gap-x-2 gap-y-3 rounded-xl border border-gray-100 bg-white p-3 sm:gap-x-3 sm:p-4 xl:grid-cols-[minmax(11rem,2fr)_minmax(4.5rem,.7fr)_minmax(5rem,.7fr)_minmax(6rem,.9fr)_minmax(6rem,.9fr)_minmax(6rem,.8fr)_minmax(6rem,.8fr)_2.25rem_2.75rem] xl:items-start xl:gap-y-1 xl:rounded-none xl:border-0 xl:px-6 xl:py-3"
+                        >
                             <div class="col-span-2 min-w-0 xl:col-span-1">
                                 <x-ui.lookup-select
                                     x-bind:id="'purchase-order-product-' + line.id"
@@ -338,10 +380,12 @@
                                 <input
                                     :id="'purchase-order-quantity-' + line.id"
                                     type="number"
-                                    min="1"
-                                    step="1"
+                                    min="0.001"
+                                    step="0.001"
                                     class="field"
                                     x-model="line.quantity"
+                                    :readonly="usesBatches(line)"
+                                    :class="usesBatches(line) ? 'cursor-not-allowed bg-gray-50 text-gray-600' : ''"
                                     placeholder="0"
                                     inputmode="numeric"
                                 >
@@ -358,6 +402,8 @@
                                     step="0.01"
                                     class="field"
                                     x-model="line.unitCost"
+                                    :readonly="usesBatches(line)"
+                                    :class="usesBatches(line) ? 'cursor-not-allowed bg-gray-50 text-gray-600' : ''"
                                     :placeholder="productOf(line.productId) ? Number(productOf(line.productId).costPrice).toFixed(2) : '0.00'"
                                     inputmode="decimal"
                                 >
@@ -384,11 +430,25 @@
                                 <span class="text-sm font-semibold tabular-nums text-gray-900" x-text="formatMoney(lineTotal(line))"></span>
                             </div>
 
+                            <div class="min-w-0">
+                                <label :for="'purchase-order-selling-price-' + line.id" class="mb-1.5 block text-xs font-semibold text-gray-600 xl:sr-only">
+                                    Selling price (₱)
+                                </label>
+                                <input
+                                    :id="'purchase-order-selling-price-' + line.id"
+                                    type="number"
+                                    class="field cursor-not-allowed bg-gray-50 text-gray-600"
+                                    :value="productOf(line.productId) ? Number(productOf(line.productId).sellingPrice).toFixed(2) : ''"
+                                    readonly
+                                    aria-readonly="true"
+                                >
+                            </div>
+
                             <div class="col-span-2 flex min-w-0 items-center justify-center gap-1 rounded-lg bg-gray-50 px-2.5 py-2 sm:px-3 xl:col-span-2 xl:bg-transparent xl:px-0 xl:py-0">
                                 <span class="text-xs font-medium text-gray-500 xl:hidden">Batches</span>
                                 <button
                                     type="button"
-                                    x-show="line.productId"
+                                    x-show="Boolean(productOf(line.productId))"
                                     x-cloak
                                     @click="toggleBatches(line)"
                                     :aria-expanded="line.batchExpanded"
@@ -440,7 +500,7 @@
                                 <div class="hidden gap-2 px-3 pb-2 text-xs font-semibold text-gray-500 lg:grid lg:grid-cols-[1.5rem_minmax(0,1fr)]">
                                     <span></span>
                                     <div class="grid grid-cols-[minmax(10rem,1.4fr)_minmax(5rem,.5fr)_minmax(6rem,.7fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_2rem] gap-3">
-                                        <span>Batch Name</span>
+                                        <span>Batch Number</span>
                                         <span>Quantity</span>
                                         <span>Unit Cost</span>
                                         <span>Received Date</span>
@@ -459,15 +519,15 @@
                                             </div>
                                             <div class="grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-[minmax(10rem,1.4fr)_minmax(5rem,.5fr)_minmax(6rem,.7fr)_minmax(8rem,1fr)_minmax(8rem,1fr)_2rem] lg:items-end">
                                                 <div class="col-span-2 min-w-0 lg:col-span-1">
-                                                    <label :for="'purchase-order-batch-name-' + line.id + '-' + batch.id" class="mb-1.5 block text-xs font-semibold text-gray-600 lg:sr-only">
-                                                        Batch Name
+                                                    <label :for="'purchase-order-batch-number-' + line.id + '-' + batch.id" class="mb-1.5 block text-xs font-semibold text-gray-600 lg:sr-only">
+                                                        Batch Number
                                                     </label>
                                                     <input
-                                                        :id="'purchase-order-batch-name-' + line.id + '-' + batch.id"
+                                                        :id="'purchase-order-batch-number-' + line.id + '-' + batch.id"
                                                         type="text"
                                                         class="field"
-                                                        x-model="batch.name"
-                                                        placeholder="Enter batch name"
+                                                        x-model="batch.batchNumber"
+                                                        placeholder="Enter batch number"
                                                     >
                                                 </div>
                                                 <div class="min-w-0">
@@ -483,6 +543,7 @@
                                                         x-model="batch.quantity"
                                                         placeholder="0"
                                                         inputmode="decimal"
+                                                        @input="syncBatchTotals(line)"
                                                     >
                                                 </div>
                                                 <div class="min-w-0">
@@ -498,6 +559,7 @@
                                                         x-model="batch.unitCost"
                                                         placeholder="0.00"
                                                         inputmode="decimal"
+                                                        @input="syncBatchTotals(line)"
                                                     >
                                                 </div>
                                                 <div class="min-w-0">

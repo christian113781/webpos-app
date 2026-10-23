@@ -19,8 +19,8 @@ use Throwable;
 #[Layout('components.layouts.user')]
 class Edit extends Component
 {
-    use WithFileUploads;
     use CreatesProductLookups;
+    use WithFileUploads;
 
     public Product $product;
 

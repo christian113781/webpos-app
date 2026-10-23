@@ -23,11 +23,6 @@
         }
     }"
 >
-    <nav aria-label="Breadcrumb" class="text-xs text-gray-400 mb-2">
-        <a href="{{ route('user.products') }}" wire:navigate class="hover:text-brand-600">Products</a>
-        <span class="mx-1" aria-hidden="true">/</span>
-        <span class="text-gray-600 font-medium" aria-current="page">{{ $isEditing ? 'Edit product' : 'Add product' }}</span>
-    </nav>
 
     <x-ui.page-header
         :title="$isEditing ? 'Edit Product' : 'Add New Product'"

@@ -22,7 +22,6 @@ class Product extends Model
         'unit',
         'reorder_level',
         'track_inventory',
-        'track_batch',
         'track_expiry',
         'status',
     ];
@@ -39,7 +38,6 @@ class Product extends Model
             'selling_price' => 'decimal:2',
             'reorder_level' => 'decimal:3',
             'track_inventory' => 'boolean',
-            'track_batch' => 'boolean',
             'track_expiry' => 'boolean',
         ];
     }
@@ -52,6 +50,11 @@ class Product extends Model
     public function inventoryMovements(): HasMany
     {
         return $this->hasMany(InventoryMovement::class);
+    }
+
+    public function batches(): HasMany
+    {
+        return $this->hasMany(ProductBatch::class);
     }
 
     public function inventoryAdjustmentItems(): HasMany

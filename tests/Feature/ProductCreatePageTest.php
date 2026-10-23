@@ -45,6 +45,7 @@ class ProductCreatePageTest extends TestCase
             ->assertSee('Selling Price (₱)')
             ->assertSee('Description')
             ->assertSee('Initial Stock')
+            ->assertDontSee('Track batches')
             ->assertSee('placeholder="0"', false)
             ->assertSee('Expiration')
             ->assertSee('(optional)')

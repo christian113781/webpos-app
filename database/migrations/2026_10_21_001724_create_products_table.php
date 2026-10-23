@@ -25,6 +25,7 @@ return new class extends Migration
 
             $table->string('name');
             $table->string('image')->nullable();
+            $table->boolean('in_catalog')->default(false);
 
             $table->string('sku')->nullable()->unique();
             $table->string('barcode')->nullable()->unique();

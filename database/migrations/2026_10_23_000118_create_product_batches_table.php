@@ -12,11 +12,14 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('product_batches', function (Blueprint $table) {
+            $table->id();
             $table->foreignId('product_id')
                 ->constrained('products')
                 ->cascadeOnDelete();
 
             $table->string('batch_number');
+            $table->decimal('unit_cost', 12, 2)->default(0);
+            $table->date('received_date')->nullable();
             $table->date('expiry_date')->nullable();
 
             $table->timestamps();

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Livewire\User\PurchaseOrder\Show;
 use App\Models\InventoryMovement;
 use App\Models\Product;
+use App\Models\ProductBatch;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use App\Models\User;
@@ -118,6 +119,71 @@ class PurchaseOrderShowTest extends TestCase
             'product_id' => $product->id,
             'type' => 'stock_out',
             'quantity' => '3.000',
+            'notes' => 'Voided purchase order '.$purchaseOrder->reference,
+        ]);
+    }
+
+    public function test_purchase_order_displays_batches_and_voids_their_stock_movements(): void
+    {
+        $user = User::factory()->create(['system_role' => 'user']);
+        $supplier = Supplier::create(['name' => 'Metro Wholesale']);
+        $product = Product::create([
+            'name' => 'Batch Juice',
+        ]);
+        $purchaseOrder = PurchaseOrder::create([
+            'supplier_id' => $supplier->id,
+            'reference' => 'PO-BATCH-001',
+            'order_date' => today()->toDateString(),
+            'status' => 'received',
+            'subtotal' => 50,
+            'total' => 50,
+        ]);
+        $item = $purchaseOrder->items()->create([
+            'product_id' => $product->id,
+            'quantity' => 2,
+            'unit_cost' => 25,
+            'item_discount' => 0,
+            'total' => 50,
+        ]);
+        $productBatch = ProductBatch::create([
+            'product_id' => $product->id,
+            'batch_number' => 'JUICE-LOT-1',
+            'unit_cost' => 25,
+            'received_date' => '2026-10-22',
+            'expiry_date' => '2027-10-22',
+        ]);
+        $item->batches()->create([
+            'product_batch_id' => $productBatch->id,
+            'batch_number' => $productBatch->batch_number,
+            'quantity' => 2,
+            'unit_cost' => 25,
+            'received_date' => '2026-10-22',
+            'expiry_date' => '2027-10-22',
+        ]);
+        InventoryMovement::create([
+            'product_id' => $product->id,
+            'product_batch_id' => $productBatch->id,
+            'type' => 'stock_in',
+            'quantity' => 2,
+            'notes' => 'Received from purchase order '.$purchaseOrder->reference,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('user.purchase-orders.show', $purchaseOrder))
+            ->assertOk()
+            ->assertSee('JUICE-LOT-1')
+            ->assertSee('Oct 22, 2026');
+
+        Livewire::actingAs($user)
+            ->test(Show::class, ['purchaseOrder' => $purchaseOrder])
+            ->call('void')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('inventory_movements', [
+            'product_id' => $product->id,
+            'product_batch_id' => $productBatch->id,
+            'type' => 'stock_out',
+            'quantity' => '2.000',
             'notes' => 'Voided purchase order '.$purchaseOrder->reference,
         ]);
     }

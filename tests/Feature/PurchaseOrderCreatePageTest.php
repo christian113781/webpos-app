@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Livewire\User\PurchaseOrder\Create;
 use App\Models\Product;
 use App\Models\Supplier;
 use App\Models\User;
@@ -43,12 +44,17 @@ class PurchaseOrderCreatePageTest extends TestCase
             ->assertSee('line.batchExpanded ? \'Hide batches\' : \'Show batches\'', false)
             ->assertSee('line.batchExpanded ? \'M5 12h14\' : \'M12 5v14M5 12h14\'', false)
             ->assertSee('toggleBatches(line)', false)
+            ->assertSee('(line.batches ?? []).length > 0', false)
+            ->assertSee('x-show="Boolean(productOf(line.productId))"', false)
             ->assertSee('if (line.batches.length === 0) this.addBatch(line)', false)
             ->assertSee('col-span-2 flex min-w-0 items-center justify-center gap-1', false)
             ->assertSee('focus-visible:ring-brand-500', false)
             ->assertDontSee('border border-gray-200 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50', false)
             ->assertDontSee('Batch Info')
-            ->assertSee('Batch Name')
+            ->assertSee('Batch Number')
+            ->assertSee('Selling price')
+            ->assertSee('sellingPrice', false)
+            ->assertSee('readonly', false)
             ->assertSee('Quantity')
             ->assertSee('Unit Cost')
             ->assertSee('Received Date')
@@ -59,7 +65,8 @@ class PurchaseOrderCreatePageTest extends TestCase
             ->assertSee("const baseName = 'Batch ' + dateLabel", false)
             ->assertSee("name = baseName + ' - ' + suffix++", false)
             ->assertSee('removeBatch(line, batch.id)', false)
-            ->assertSee('x-model="batch.name"', false)
+            ->assertSee('x-model="batch.batchNumber"', false)
+            ->assertSee('syncBatchTotals(line)', false)
             ->assertSee('x-model="batch.quantity"', false)
             ->assertSee('placeholder="0"', false)
             ->assertSee('class="space-y-1"', false)
@@ -115,7 +122,7 @@ class PurchaseOrderCreatePageTest extends TestCase
     public function test_payment_method_and_date_default_to_cash_and_today(): void
     {
         Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
-            ->test(\App\Livewire\User\PurchaseOrder\Create::class)
+            ->test(Create::class)
             ->assertSet('paymentMethod', 'cash')
             ->assertSet('paymentDate', now()->toDateString());
     }
