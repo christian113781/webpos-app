@@ -3,17 +3,18 @@
     tabindex="-1"
     class="flex-1 px-4 sm:px-6 py-6 max-w-[1600px] mx-auto w-full"
     x-data="{
+        productName: $wire.entangle('name'),
         sku: $wire.entangle('sku'),
         existingSkus: @js($existingSkus),
         generateSku(name) {
-            const letters = (name.match(/[a-z]/gi) ?? []).slice(0, 3).join('').toUpperCase();
-            if (!letters) {
+            const words = name.match(/[a-z0-9]+/gi) ?? [];
+            if (!words.length) {
                 this.sku = '';
                 return;
             }
 
-            const prefix = letters.padEnd(3, 'X');
-            const pattern = new RegExp('^' + prefix + '-([0-9]+)$', 'i');
+            const prefix = words.map(word => word.slice(0, 3).toUpperCase()).join('-');
+            const pattern = new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-([0-9]+)$', 'i');
             const lastNumber = this.existingSkus.reduce((max, sku) => {
                 const match = sku.match(pattern);
                 return match ? Math.max(max, Number(match[1])) : max;
@@ -31,11 +32,32 @@
 
     <form wire:submit="save" novalidate>
     <div class="product-create-layout grid grid-cols-1 gap-6 items-start">
-        <div class="product-create-form-sections space-y-6 min-w-0 order-2 lg:order-1">
-            <section aria-labelledby="product-classification-heading">
+        <div class="product-create-form-sections space-y-6 min-w-0 order-1">
+            <section aria-labelledby="product-details-heading">
                 <x-ui.card>
-                    <h2 id="product-classification-heading" class="text-sm font-bold text-gray-900">Category &amp; Supplier</h2>
-                    <p class="text-xs text-gray-400 mt-0.5 mb-4">Choose where this product belongs and who supplies it.</p>
+                    <div class="mb-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                            <h2 id="product-details-heading" class="text-sm font-bold text-gray-900">Product Details</h2>
+                            <p class="text-xs text-gray-400 mt-0.5">Enter the basic information for this product.</p>
+                        </div>
+
+                        <div x-data="{ inPosCatalog: true }" class="flex items-start gap-3 sm:max-w-xs">
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-label="Add to POS catalog"
+                                :aria-checked="inPosCatalog.toString()"
+                                @click="inPosCatalog = !inPosCatalog"
+                                class="switch shrink-0"
+                            >
+                                <span></span>
+                            </button>
+                            <div>
+                                <p class="text-sm font-semibold text-gray-800">Add to POS catalog</p>
+                                <p class="mt-0.5 text-xs text-gray-500">Show this item in POS.</p>
+                            </div>
+                        </div>
+                    </div>
 
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <x-ui.lookup-select
@@ -60,26 +82,123 @@
                             optional
                         />
                     </div>
+
+                    <div class="mt-4">
+                        <x-ui.input name="name" wire:model="name" x-on:input="generateSku($event.target.value)" label="Product Name" placeholder="e.g. Water Bottle" autocomplete="off" required />
+                    </div>
+
+                    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <x-ui.select name="unit" wire:model="unit" label="Base Unit" required>
+                            @foreach ($units as $unit)
+                                <option value="{{ $unit->value }}" @selected($unit->value === \App\Enums\ProductUnit::Piece->value)>
+                                    {{ $unit->label() }}
+                                </option>
+                            @endforeach
+                        </x-ui.select>
+                        <x-ui.input
+                            name="expiration_date"
+                            wire:model="expiration_date"
+                            label="Expiration Date"
+                            optional
+                            type="date"
+                        />
+                    </div>
+
                 </x-ui.card>
             </section>
 
-            <section aria-labelledby="product-information-heading">
+            <section aria-labelledby="product-variants-heading" x-data="{
+                isEditing: @js($isEditing),
+                hasVariants: false,
+                baseVariantName: '',
+                taxClassification: 'vatable',
+                variants: [],
+                nextVariantId: 3,
+                addVariant() {
+                    this.variants.push({
+                        id: this.nextVariantId++,
+                        name: '',
+                        sku: '',
+                        barcode: '',
+                        costPrice: '',
+                        sellingPrice: '',
+                        initialStock: '',
+                        reorderLevel: '',
+                    });
+                },
+                removeVariant(id) {
+                    this.variants = this.variants.filter(variant => variant.id !== id);
+                }
+            }">
                 <x-ui.card>
-                    <h2 id="product-information-heading" class="text-sm font-bold text-gray-900">Product Information</h2>
-                    <p class="text-xs text-gray-400 mt-0.5 mb-4">Name, codes and a short description.</p>
+                    <div class="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h2 id="product-variants-heading" class="text-sm font-bold text-gray-900">Variants &amp; Inventory</h2>
+                            <p class="mt-0.5 text-xs text-gray-400">Set up how this product is sold and stocked.</p>
+                        </div>
 
-                    <div class="space-y-4">
-                        <x-ui.input name="name" wire:model="name" x-on:input="generateSku($event.target.value)" label="Product Name" placeholder="e.g. Lucky Me Pancit Canton" autocomplete="off" required />
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div x-show="!isEditing" class="flex items-start gap-3 sm:max-w-xs">
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-label="This product has multiple variants"
+                                :aria-checked="hasVariants.toString()"
+                                @click="hasVariants = !hasVariants"
+                                class="switch mt-0.5 shrink-0"
+                            >
+                                <span></span>
+                            </button>
                             <div>
-                                <label for="product-sku" class="block text-xs font-semibold text-gray-600 mb-1.5">SKU <span class="text-red-500" aria-hidden="true">*</span></label>
+                                <p class="text-sm font-semibold text-gray-800">This product has multiple variants</p>
+                                <p class="mt-0.5 text-xs text-gray-500">Enable if this product comes in different sizes, flavors, or packs.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <article
+                        class="space-y-3 rounded-xl transition-colors"
+                        :class="hasVariants ? 'border border-gray-200 bg-gray-50/50 p-3 sm:p-4' : ''"
+                    >
+                        <div x-cloak x-show="hasVariants" class="mb-1 flex items-center justify-between">
+                            <div class="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                                <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01M8 6h8M8 12h8M8 18h8" />
+                                </svg>
+                                <h3 x-text="(productName.trim() ? productName.trim() + ': ' : '') + (baseVariantName.trim() || 'Variant #1')"></h3>
+                            </div>
+                            <button
+                                type="button"
+                                disabled
+                                aria-label="Variant 1 cannot be removed"
+                                title="The first variant is required"
+                                class="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-lg text-red-300"
+                            >
+                                <x-ui.icon name="trash" class="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div
+                            class="grid grid-cols-1 gap-3"
+                            :class="hasVariants ? 'sm:grid-cols-3' : 'sm:grid-cols-2'"
+                        >
+                            <div x-cloak x-show="hasVariants">
+                                <x-ui.input
+                                    label="Variant Name"
+                                    required
+                                    x-model="baseVariantName"
+                                    placeholder="e.g. 500ml"
+                                />
+                            </div>
+                            <div>
+                                <label for="product-sku" class="mb-1.5 block text-xs font-semibold text-gray-600">
+                                    SKU <span class="text-red-500" aria-hidden="true">*</span>
+                                </label>
                                 <input
                                     id="product-sku"
                                     name="sku"
                                     x-model="sku"
                                     type="text"
-                                    class="field rounded-xl min-w-0 @error('sku') error @enderror"
+                                    class="field min-w-0 @error('sku') error @enderror"
                                     placeholder="SKU"
                                     autocomplete="off"
                                     required
@@ -89,96 +208,170 @@
                             <x-ui.input name="barcode" wire:model="barcode" label="Barcode" optional placeholder="Scan or type barcode" inputmode="numeric" autocomplete="off" />
                         </div>
 
-                        <x-ui.textarea
-                            name="description"
-                            wire:model="description"
-                            label="Description"
-                            rows="3"
-                            placeholder="Size, flavor, brand or any notes about this product"
-                        />
+                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                            <x-ui.input
+                                name="cost_price"
+                                wire:model="cost_price"
+                                label="Cost Price (₱)"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                inputmode="decimal"
+                                placeholder="0.00"
+                                required
+                            />
+                            <x-ui.input
+                                name="selling_price"
+                                wire:model="selling_price"
+                                label="Selling Price (₱)"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                inputmode="decimal"
+                                placeholder="0.00"
+                                required
+                            />
+                            <x-ui.input
+                                name="initial_stock"
+                                wire:model="initial_stock"
+                                :label="$isEditing ? 'On Hand' : 'Initial Stock'"
+                                type="number"
+                                min="0"
+                                step="1"
+                                inputmode="numeric"
+                                placeholder="0"
+                                required
+                            />
+                            <x-ui.input
+                                name="reorder_level"
+                                wire:model="reorder_level"
+                                label="Reorder Level"
+                                type="number"
+                                min="0"
+                                step="1"
+                                inputmode="numeric"
+                                placeholder="0"
+                            />
+                        </div>
+                    </article>
+
+                    <div x-cloak x-show="hasVariants" class="mt-3 space-y-3">
+                        <template x-for="(variant, index) in variants" :key="variant.id">
+                            <article class="rounded-xl border border-gray-200 bg-gray-50/50 p-3 sm:p-4">
+                                <div class="mb-3 flex items-center justify-between">
+                                    <div class="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                                        <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01M8 6h8M8 12h8M8 18h8" />
+                                        </svg>
+                                        <h3 x-text="(productName.trim() ? productName.trim() + ': ' : '') + (variant.name.trim() || 'Variant #' + (index + 2))"></h3>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        @click="removeVariant(variant.id)"
+                                        :aria-label="'Remove variant ' + (index + 2)"
+                                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                                    >
+                                        <x-ui.icon name="trash" class="h-4 w-4" />
+                                    </button>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                    <x-ui.input
+                                        label="Variant Name"
+                                        required
+                                        x-model="variant.name"
+                                        placeholder="e.g. 500ml"
+                                    />
+                                    <x-ui.input
+                                        label="SKU"
+                                        optional
+                                        x-model="variant.sku"
+                                        placeholder="SKU"
+                                    />
+                                    <x-ui.input
+                                        label="Barcode"
+                                        optional
+                                        x-model="variant.barcode"
+                                        placeholder="Scan or type barcode"
+                                    />
+                                </div>
+
+                                <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
+                                    <x-ui.input
+                                        label="Cost Price (₱)"
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        inputmode="decimal"
+                                        placeholder="0.00"
+                                        required
+                                        x-model="variant.costPrice"
+                                    />
+                                    <x-ui.input
+                                        label="Selling Price (₱)"
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        inputmode="decimal"
+                                        placeholder="0.00"
+                                        required
+                                        x-model="variant.sellingPrice"
+                                    />
+                                    <x-ui.input
+                                        label="Initial Stock"
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        inputmode="numeric"
+                                        placeholder="0"
+                                        required
+                                        x-model="variant.initialStock"
+                                    />
+                                    <x-ui.input
+                                        label="Reorder Level"
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        inputmode="numeric"
+                                        placeholder="0"
+                                        x-model="variant.reorderLevel"
+                                    />
+                                </div>
+                            </article>
+                        </template>
+
+                        <button
+                            type="button"
+                            @click="addVariant()"
+                            class="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-emerald-300 bg-emerald-50/50 px-4 text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-400 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                        >
+                            <x-ui.icon name="plus" class="h-4 w-4" />
+                            Add Another Variant
+                        </button>
+                    </div>
+
+                    <div class="mt-4 border-t border-gray-100 pt-4">
+                        <h3 class="text-sm font-semibold text-gray-800">Tax Settings</h3>
+                        <div class="mt-3 w-full">
+                            <label for="product-tax-classification" class="mb-1.5 block text-xs font-semibold text-gray-600">VAT classification</label>
+                            <select
+                                id="product-tax-classification"
+                                x-model="taxClassification"
+                                class="field"
+                            >
+                                <option value="non_vat">Non-VAT</option>
+                                <option value="vatable">VATable</option>
+                                <option value="vat_exempt">VAT-exempt</option>
+                                <option value="zero_rated">Zero-rated</option>
+                            </select>
+                        </div>
                     </div>
                 </x-ui.card>
             </section>
 
-            <section aria-labelledby="product-pricing-heading">
-                <x-ui.card>
-                    <h2 id="product-pricing-heading" class="text-sm font-bold text-gray-900">Pricing</h2>
-                    <p class="text-xs text-gray-400 mt-0.5 mb-4">What you pay and what you sell it for.</p>
-
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-                        <x-ui.input
-                            name="cost_price"
-                            wire:model="cost_price"
-                            label="Cost Price (₱)"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            inputmode="decimal"
-                            placeholder="0.00"
-                            required
-                        />
-                        <x-ui.input
-                            name="selling_price"
-                            wire:model="selling_price"
-                            label="Selling Price (₱)"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            inputmode="decimal"
-                            placeholder="0.00"
-                            required
-                        />
-                    </div>
-                </x-ui.card>
-            </section>
-
-            <section aria-labelledby="product-inventory-heading">
-                <x-ui.card>
-                    <h2 id="product-inventory-heading" class="text-sm font-bold text-gray-900">Stock Information</h2>
-                    <p class="text-xs text-gray-400 mt-0.5 mb-4">Stock on hand, how it is counted and when it needs restocking.</p>
-
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <x-ui.input
-                            name="initial_stock"
-                            wire:model="initial_stock"
-                            :label="$isEditing ? 'On Hand' : 'Initial Stock'"
-                            type="number"
-                            min="0"
-                            step="1"
-                            inputmode="numeric"
-                            placeholder="0"
-                            required
-                        />
-                        <x-ui.select name="unit" wire:model="unit" label="Unit" required>
-                            @foreach ($units as $unit)
-                                <option value="{{ $unit->value }}" @selected($unit->value === \App\Enums\ProductUnit::Piece->value)>
-                                    {{ $unit->label() }}
-                                </option>
-                            @endforeach
-                        </x-ui.select>
-                        <x-ui.input
-                            name="reorder_level"
-                            wire:model="reorder_level"
-                            label="Reorder Level"
-                            type="number"
-                            min="0"
-                            step="1"
-                            inputmode="numeric"
-                            placeholder="0"
-                        />
-                        <x-ui.input
-                            name="expiration_date"
-                            wire:model="expiration_date"
-                            label="Expiration"
-                            optional
-                            type="date"
-                        />
-                    </div>
-                </x-ui.card>
-            </section>
         </div>
 
-        <aside class="product-create-image-column order-1 lg:order-2 lg:sticky lg:top-24">
+        <aside class="product-create-image-column order-2 xl:sticky xl:top-24">
             <section aria-labelledby="product-image-heading">
                 <x-ui.card>
                     <div wire:ignore x-data="{
@@ -236,15 +429,15 @@
                         this.$refs.imageInput.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 }" x-on:paste.window="handlePaste($event)" x-on:product-image-reset.window="clearPreview()">
-                    <div class="product-create-image-content grid grid-cols-[5rem_minmax(0,1fr)] gap-x-4 items-start lg:block">
-                        <div class="col-start-2 row-start-1 min-w-0 lg:mt-0">
+                    <div class="product-create-image-content grid grid-cols-[3rem_minmax(0,1fr)] gap-x-2 items-start xl:block">
+                        <div class="col-start-2 row-start-1 min-w-0 xl:mt-0">
                             <h2 id="product-image-heading" class="text-sm font-bold text-gray-900">
                                 Product Image <span class="text-gray-400 font-normal">(optional)</span>
                             </h2>
                             <p class="mt-0.5 text-xs text-gray-400">Add one clear photo of the product.</p>
                         </div>
                         <div class="col-start-2 row-start-2 min-w-0">
-                            <p id="product-image-help" class="mt-2 text-[11px] leading-relaxed text-gray-400 lg:mt-3">
+                            <p id="product-image-help" class="mt-2 text-[11px] leading-relaxed text-gray-400 xl:mt-3">
                                 PNG, JPG or WebP · up to 5 MB. A square photo on a plain background looks best.
                             </p>
                             <p class="mt-2 text-xs text-red-500" role="alert" x-show="error" x-cloak x-text="error"></p>
@@ -253,7 +446,7 @@
                         <div class="product-create-image-upload relative col-start-1 row-start-1 row-span-3">
                             <label
                                 for="product-image"
-                                class="relative flex h-20 w-20 cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 text-gray-400 transition-colors hover:border-brand-400 hover:bg-brand-50/40 focus-within:outline-none focus-within:ring-2 focus-within:ring-brand-400 sm:h-24 sm:w-24 lg:mt-4 lg:aspect-square lg:h-auto lg:w-full lg:rounded-2xl"
+                                class="relative flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 text-gray-400 transition-colors hover:border-brand-400 hover:bg-brand-50/40 focus-within:outline-none focus-within:ring-2 focus-within:ring-brand-400 xl:mt-4 xl:aspect-square xl:h-auto xl:w-full xl:rounded-2xl"
                                 :class="dragging ? 'border-brand-500 bg-brand-50' : ''"
                                 x-on:dragover.prevent="dragging = true"
                                 x-on:dragleave.prevent="dragging = false"
@@ -264,9 +457,9 @@
                                     <img :src="preview" alt="Product image preview" class="absolute inset-0 h-full w-full object-cover">
                                 </template>
                                 <span x-show="!preview" class="flex flex-col items-center justify-center p-2 text-center">
-                                    <x-ui.icon name="image" class="h-7 w-7 lg:h-10 lg:w-10 lg:mb-2" />
-                                    <span class="hidden text-sm font-semibold text-gray-600 lg:block">Click to upload or drag &amp; drop</span>
-                                    <span class="hidden text-xs text-gray-400 lg:block">You can also paste an image (Ctrl+V)</span>
+                                    <x-ui.icon name="image" class="h-5 w-5 xl:h-10 xl:w-10 xl:mb-2" />
+                                    <span class="hidden text-sm font-semibold text-gray-600 xl:block">Click to upload or drag &amp; drop</span>
+                                    <span class="hidden text-xs text-gray-400 xl:block">You can also paste an image (Ctrl+V)</span>
                                 </span>
                                 <input
                                     id="product-image"
@@ -286,7 +479,7 @@
                                 x-show="preview"
                                 x-cloak
                                 x-on:click="clearPreview()"
-                                class="absolute -end-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full bg-gray-800/75 text-white transition-colors hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600 lg:end-2 lg:top-2"
+                                class="absolute -end-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full bg-gray-800/75 text-white transition-colors hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600 xl:end-2 xl:top-2"
                                 aria-label="Remove product image"
                                 title="Remove image"
                             >
@@ -298,7 +491,7 @@
                 </x-ui.card>
             </section>
 
-            <div class="product-create-desktop-actions hidden lg:flex mt-4 flex-col gap-2">
+            <div class="product-create-desktop-actions hidden xl:flex mt-4 flex-col gap-2">
                 <x-ui.button type="submit" class="w-full" wire:loading.attr="disabled" wire:target="save,image">
                     {{ $isEditing ? 'Update Product' : 'Save Product' }}
                 </x-ui.button>
@@ -314,7 +507,7 @@
         </aside>
     </div>
 
-    <div class="product-create-mobile-actions lg:hidden mt-6 flex flex-col gap-2">
+    <div class="product-create-mobile-actions xl:hidden mt-6 flex flex-col gap-2">
         <x-ui.button type="submit" class="w-full" wire:loading.attr="disabled" wire:target="save,image">
             {{ $isEditing ? 'Update Product' : 'Save Product' }}
         </x-ui.button>

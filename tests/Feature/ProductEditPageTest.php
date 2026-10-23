@@ -46,6 +46,7 @@ class ProductEditPageTest extends TestCase
             ->get(route('user.products.edit', $product))
             ->assertOk()
             ->assertDontSee('Track batches')
+            ->assertSee('x-show="!isEditing"', false)
             ->assertSee('Edit Product')
             ->assertSee('Update Product')
             ->assertSee('Beverages')

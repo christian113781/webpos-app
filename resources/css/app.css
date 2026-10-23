@@ -290,7 +290,7 @@ body { background: #f5faf7; overflow-x: hidden; min-height: 100%; }
 .product-create-mobile-actions { display: flex; }
 .product-create-desktop-actions { display: none; }
 
-@media (min-width: 768px) {
+@media (min-width: 1280px) {
   .product-create-layout {
     grid-template-columns: minmax(0, 2.3fr) minmax(220px, 1fr);
   }
