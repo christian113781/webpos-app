@@ -10,15 +10,21 @@ class InventoryMovement extends Model
 {
     protected $fillable = [
         'product_id',
+        'product_variant_id',
         'product_batch_id',
         'type',
         'quantity',
         'notes',
     ];
 
-    public function product(): BelongsTo
+    public function productVariant(): BelongsTo
     {
-        return $this->belongsTo(Product::class);
+        return $this->belongsTo(ProductVariant::class);
+    }
+
+    public function getProductAttribute(): ?Product
+    {
+        return $this->productVariant?->product;
     }
 
     public function productBatch(): BelongsTo
@@ -65,6 +71,6 @@ class InventoryMovement extends Model
 
     public function getQuantityUnitDisplayAttribute(): string
     {
-        return strtolower($this->product?->unit?->label() ?? 'pcs');
+        return strtolower($this->productVariant?->product?->unit?->label() ?? 'pcs');
     }
 }

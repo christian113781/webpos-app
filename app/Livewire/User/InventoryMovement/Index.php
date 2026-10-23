@@ -38,12 +38,12 @@ class Index extends Component
     private function filteredMovements()
     {
         return InventoryMovement::query()
-            ->with(['product:id,name,unit'])
+            ->with(['productVariant.product:id,name,unit'])
             ->when($this->search !== '', function ($query): void {
                 $search = '%'.$this->search.'%';
                 $query->where(function ($query) use ($search): void {
                     $query->where('notes', 'like', $search)
-                        ->orWhereHas('product', fn ($productQuery) => $productQuery->where('name', 'like', $search));
+                        ->orWhereHas('productVariant.product', fn ($productQuery) => $productQuery->where('name', 'like', $search));
                 });
             })
             ->when($this->typeFilter !== '', function ($query): void {

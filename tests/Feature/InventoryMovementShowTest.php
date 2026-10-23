@@ -8,6 +8,7 @@ use App\Models\Category;
 use App\Models\InventoryAdjustment;
 use App\Models\InventoryMovement;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -21,17 +22,17 @@ class InventoryMovementShowTest extends TestCase
     {
         $user = User::factory()->create(['system_role' => 'user']);
         $category = Category::create(['name' => 'Drinks']);
-        $product = Product::create(['name' => 'Soda', 'category_id' => $category->id, 'unit' => 'can']);
+        $variant = $this->createVariant('Soda', $category->id, 'can');
 
         Livewire::actingAs($user)
             ->test(AdjustStock::class)
             ->set('lines', [
-                ['productId' => (string) $product->id, 'quantity' => '5', 'reason' => 'Restock'],
+                ['variantId' => (string) $variant->id, 'quantity' => '5', 'reason' => 'Restock'],
             ])
             ->call('save')
             ->assertRedirect(route('user.inventory-movements'));
 
-        $movement = $product->inventoryMovements()->latest('id')->firstOrFail();
+        $movement = $variant->inventoryMovements()->latest('id')->firstOrFail();
         $movement->forceFill([
             'created_at' => '2026-10-22 06:38:00',
             'updated_at' => '2026-10-22 06:38:00',
@@ -54,9 +55,9 @@ class InventoryMovementShowTest extends TestCase
     {
         $user = User::factory()->create(['system_role' => 'user']);
         $category = Category::create(['name' => 'Drinks']);
-        $stockInProduct = Product::create(['name' => 'Soda', 'category_id' => $category->id, 'unit' => 'can']);
-        $stockOutProduct = Product::create(['name' => 'Juice', 'category_id' => $category->id, 'unit' => 'can']);
-        $stockOutProduct->inventoryMovements()->create([
+        $stockInVariant = $this->createVariant('Soda', $category->id, 'can');
+        $stockOutVariant = $this->createVariant('Juice', $category->id, 'can');
+        $stockOutVariant->inventoryMovements()->create([
             'type' => 'stock_in',
             'quantity' => 10,
             'notes' => 'Opening stock',
@@ -65,8 +66,8 @@ class InventoryMovementShowTest extends TestCase
         Livewire::actingAs($user)
             ->test(AdjustStock::class)
             ->set('lines', [
-                ['productId' => (string) $stockInProduct->id, 'quantity' => '5', 'reason' => 'Restock'],
-                ['productId' => (string) $stockOutProduct->id, 'quantity' => '-3', 'reason' => 'Damaged'],
+                ['variantId' => (string) $stockInVariant->id, 'quantity' => '5', 'reason' => 'Restock'],
+                ['variantId' => (string) $stockOutVariant->id, 'quantity' => '-3', 'reason' => 'Damaged'],
             ])
             ->call('save')
             ->assertRedirect(route('user.inventory-movements'));
@@ -85,13 +86,13 @@ class InventoryMovementShowTest extends TestCase
         ]);
         $this->assertNotNull($adjustment->fresh()->voided_at);
         $this->assertDatabaseHas('inventory_movements', [
-            'product_id' => $stockInProduct->id,
+            'product_variant_id' => $stockInVariant->id,
             'type' => 'stock_out',
             'quantity' => 5,
             'notes' => 'Voided adjustment '.$adjustment->reference,
         ]);
         $this->assertDatabaseHas('inventory_movements', [
-            'product_id' => $stockOutProduct->id,
+            'product_variant_id' => $stockOutVariant->id,
             'type' => 'stock_in',
             'quantity' => 3,
             'notes' => 'Voided adjustment '.$adjustment->reference,
@@ -115,8 +116,8 @@ class InventoryMovementShowTest extends TestCase
     public function test_non_adjustment_movements_cannot_be_voided(): void
     {
         $user = User::factory()->create(['system_role' => 'user']);
-        $product = Product::create(['name' => 'Soda']);
-        $movement = $product->inventoryMovements()->create([
+        $variant = $this->createVariant('Soda');
+        $movement = $variant->inventoryMovements()->create([
             'type' => 'stock_in',
             'quantity' => 5,
             'notes' => 'Initial stock',
@@ -128,6 +129,20 @@ class InventoryMovementShowTest extends TestCase
             ->assertHasErrors(['void']);
 
         $this->assertDatabaseCount('inventory_adjustments', 0);
-        $this->assertSame(1, $product->inventoryMovements()->count());
+        $this->assertSame(1, $variant->inventoryMovements()->count());
+    }
+
+    private function createVariant(string $name, ?int $categoryId = null, string $unit = 'piece'): ProductVariant
+    {
+        $product = Product::create([
+            'name' => $name,
+            'category_id' => $categoryId,
+            'unit' => $unit,
+        ]);
+
+        return ProductVariant::create([
+            'product_id' => $product->id,
+            'name' => 'Default',
+        ]);
     }
 }

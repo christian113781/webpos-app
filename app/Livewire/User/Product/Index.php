@@ -4,6 +4,8 @@ namespace App\Livewire\User\Product;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductVariant;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -20,8 +22,6 @@ class Index extends Component
 
     public string $categoryFilter = '';
 
-    public string $statusFilter = '';
-
     public string $sortBy = 'name';
 
     public ?int $deletingProductId = null;
@@ -36,11 +36,6 @@ class Index extends Component
         $this->resetPage();
     }
 
-    public function updatingStatusFilter(): void
-    {
-        $this->resetPage();
-    }
-
     public function updatingSortBy(): void
     {
         $this->resetPage();
@@ -48,7 +43,7 @@ class Index extends Component
 
     public function resetFilters(): void
     {
-        $this->reset('search', 'categoryFilter', 'statusFilter', 'sortBy');
+        $this->reset('search', 'categoryFilter', 'sortBy');
         $this->resetPage();
     }
 
@@ -63,6 +58,15 @@ class Index extends Component
     public function delete(): void
     {
         $product = Product::findOrFail($this->deletingProductId);
+
+        if ($product->variants()->whereHas('inventoryMovements')->exists()) {
+            $this->deletingProductId = null;
+            $this->dispatch('close-modal', name: 'delete-product');
+            $this->dispatch('toast', message: 'Products with inventory movement history cannot be deleted.');
+
+            return;
+        }
+
         $imagePath = $product->image;
         $product->delete();
 
@@ -79,35 +83,38 @@ class Index extends Component
         $this->dispatch('toast', message: 'Product deleted successfully.');
     }
 
-    private function filteredProducts()
+    private function filteredProducts(): Builder
     {
         return Product::query()
             ->when($this->search !== '', function ($query): void {
                 $search = '%' . $this->search . '%';
                 $query->where(function ($query) use ($search): void {
                     $query->where('name', 'like', $search)
-                        ->orWhere('sku', 'like', $search)
-                        ->orWhere('barcode', 'like', $search)
-                        ->orWhere('description', 'like', $search);
+                        ->orWhereHas('variants', function ($variantQuery) use ($search): void {
+                            $variantQuery->where('name', 'like', $search)
+                                ->orWhere('sku', 'like', $search)
+                                ->orWhere('barcode', 'like', $search);
+                        });
                 });
             })
-            ->when($this->categoryFilter !== '', fn ($query) => $query->where('category_id', $this->categoryFilter))
-            ->when($this->statusFilter !== '', fn ($query) => $query->where('status', $this->statusFilter));
+            ->when($this->categoryFilter !== '', fn ($query) => $query->where('category_id', $this->categoryFilter));
     }
 
     public function render()
     {
         $products = $this->filteredProducts()
-            ->with('category')
-            ->withSum([
-                'inventoryMovements as stock_in_quantity' => fn ($query) => $query->where('type', 'stock_in'),
-                'inventoryMovements as stock_out_quantity' => fn ($query) => $query->where('type', 'stock_out'),
-            ], 'quantity');
+            ->with([
+                'category',
+                'variants' => fn ($query) => $query->withSum([
+                    'inventoryMovements as stock_in_quantity' => fn ($movementQuery) => $movementQuery->where('type', 'stock_in'),
+                    'inventoryMovements as stock_out_quantity' => fn ($movementQuery) => $movementQuery->where('type', 'stock_out'),
+                ], 'quantity'),
+            ]);
 
         match ($this->sortBy) {
-            'price-asc' => $products->orderBy('selling_price'),
-            'price-desc' => $products->orderByDesc('selling_price'),
-            'newest' => $products->latest(),
+            'price-asc' => $products->withMin('variants', 'selling_price')->orderBy('variants_min_selling_price'),
+            'price-desc' => $products->withMax('variants', 'selling_price')->orderByDesc('variants_max_selling_price'),
+            'newest' => $products->orderByDesc('id'),
             default => $products->orderBy('name'),
         };
 
@@ -115,8 +122,7 @@ class Index extends Component
             'products' => $products->paginate(self::PER_PAGE),
             'categories' => Category::query()->orderBy('name')->get(['id', 'name']),
             'totalProducts' => Product::count(),
-            'activeProducts' => Product::where('status', 'active')->count(),
-            'inactiveProducts' => Product::where('status', 'inactive')->count(),
+            'totalVariants' => ProductVariant::count(),
             'totalCategories' => Category::count(),
             'deletingProduct' => $this->deletingProductId
                 ? Product::find($this->deletingProductId)

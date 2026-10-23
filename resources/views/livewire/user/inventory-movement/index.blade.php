@@ -67,7 +67,7 @@
                                     </td>
                                     <th scope="row" class="px-3 py-3 text-start font-semibold text-gray-800">
                                         <a href="{{ route('user.inventory-movements.show', $movement) }}" wire:navigate class="hover:text-brand-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600 rounded-sm">
-                                            {{ $movement->product?->name ?? 'Deleted product' }}
+                                            {{ $movement->productVariant?->name ?? 'Deleted product' }}
                                         </a>
                                     </th>
                                     <td class="px-3 py-3">
@@ -97,7 +97,7 @@
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
                                     <a href="{{ route('user.inventory-movements.show', $movement) }}" wire:navigate class="font-semibold text-gray-900 hover:text-brand-700">
-                                        {{ $movement->product?->name ?? 'Deleted product' }}
+                                        {{ $movement->productVariant?->name ?? 'Deleted product' }}
                                     </a>
                                     <p class="mt-0.5 text-xs text-gray-400">
                                         {{ $movement->created_at->copy()->timezone('Asia/Manila')->format('M d, Y') }}

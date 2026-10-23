@@ -24,6 +24,11 @@ class ExpenseIndexPageTest extends TestCase
             'payment_method' => 'bank_transfer',
             'notes' => 'Electric bill',
         ]);
+        $expense = Expense::where('description', 'Electricity bill')->firstOrFail();
+        $expense->forceFill([
+            'created_at' => '2026-10-23 16:07:00',
+            'updated_at' => '2026-10-23 16:07:00',
+        ])->save();
 
         $this->actingAs($user)
             ->get(route('user.expenses'))
@@ -32,6 +37,7 @@ class ExpenseIndexPageTest extends TestCase
             ->assertSee('This month')
             ->assertSee('Utilities')
             ->assertSee('Electricity bill')
+            ->assertSee('12:07 AM')
             ->assertSee('Sort: Newest first')
             ->assertSee('₱1,250.50')
             ->assertSee('Electric bill')

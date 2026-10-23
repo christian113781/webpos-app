@@ -4,7 +4,7 @@ namespace App\Livewire\User\InventoryMovement;
 
 use App\Models\InventoryAdjustment;
 use App\Models\InventoryMovement;
-use App\Models\Product;
+use App\Models\ProductVariant;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
@@ -45,27 +45,28 @@ class Show extends Component
                 ]);
             }
 
-            $items = $adjustment->items()->orderBy('product_id')->get();
-            $productIds = $items->pluck('product_id')->unique()->sort()->values();
-            $products = Product::query()
-                ->whereIn('id', $productIds)
+            $items = $adjustment->items()->orderBy('product_variant_id')->get();
+            $variantIds = $items->pluck('product_variant_id')->filter()->unique()->sort()->values();
+            $variants = ProductVariant::query()
+                ->with('product')
+                ->whereIn('id', $variantIds)
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get()
                 ->keyBy('id');
 
             foreach ($items as $item) {
-                $product = $products->get($item->product_id);
+                $variant = $variants->get($item->product_variant_id);
 
-                if (! $product) {
+                if (! $variant) {
                     throw ValidationException::withMessages([
-                        'void' => 'A product in this adjustment is no longer available, so it cannot be voided.',
+                        'void' => 'A product variant in this adjustment is no longer available, so it cannot be voided.',
                     ]);
                 }
 
                 $reversalType = $item->type === 'adjustment_in' ? 'stock_out' : 'stock_in';
 
-                $product->inventoryMovements()->create([
+                $variant->inventoryMovements()->create([
                     'type' => $reversalType,
                     'quantity' => $item->quantity,
                     'notes' => 'Voided adjustment '.$reference,
@@ -85,18 +86,18 @@ class Show extends Component
     public function render()
     {
         $movement = InventoryMovement::query()
-            ->with('product')
+            ->with('productVariant.product')
             ->findOrFail($this->movementId);
         $reference = $this->adjustmentReference($movement);
         $adjustment = $reference
             ? InventoryAdjustment::query()
-                ->with(['items.product'])
+                ->with(['items.product', 'items.productVariant.product'])
                 ->where('reference', $reference)
                 ->first()
             : null;
         $originalMovements = $reference
             ? InventoryMovement::query()
-                ->with('product')
+                ->with('productVariant.product')
                 ->where('notes', 'like', 'Adjustment '.$reference.'%')
                 ->get()
             : collect([$movement]);

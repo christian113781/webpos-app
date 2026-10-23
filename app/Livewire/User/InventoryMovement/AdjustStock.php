@@ -4,7 +4,7 @@ namespace App\Livewire\User\InventoryMovement;
 
 use App\Models\InventoryAdjustment;
 use App\Models\InventoryMovement;
-use App\Models\Product;
+use App\Models\ProductVariant;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -26,7 +26,7 @@ class AdjustStock extends Component
     {
         $this->adjustmentDate = now()->toDateString();
         $this->lines = [
-            ['id' => 1, 'productId' => '', 'quantity' => '', 'reason' => ''],
+            ['id' => 1, 'variantId' => '', 'quantity' => '', 'reason' => ''],
         ];
     }
 
@@ -36,13 +36,11 @@ class AdjustStock extends Component
             'adjustmentDate' => ['required', 'date', 'before_or_equal:today'],
             'notes' => ['nullable', 'string', 'max:255'],
             'lines' => ['required', 'array', 'min:1', 'max:50'],
-            'lines.*.productId' => [
+            'lines.*.variantId' => [
                 'required',
                 'integer',
                 'distinct',
-                Rule::exists('products', 'id')->where(
-                    fn ($query) => $query->where('status', 'active')->where('track_inventory', true)
-                ),
+                Rule::exists('product_variants', 'id'),
             ],
             'lines.*.quantity' => ['required', 'numeric', 'not_in:0', 'min:-999999999.999', 'max:999999999.999'],
             'lines.*.reason' => ['nullable', 'string', 'max:255'],
@@ -69,42 +67,42 @@ class AdjustStock extends Component
         }
 
         DB::transaction(function () use ($validated, $adjustmentAt): void {
-            $productIds = collect($validated['lines'])
-                ->pluck('productId')
+            $variantIds = collect($validated['lines'])
+                ->pluck('variantId')
                 ->map(fn ($id) => (int) $id)
                 ->unique()
                 ->sort()
                 ->values();
 
-            $products = Product::query()
-                ->whereIn('id', $productIds)
+            $variants = ProductVariant::query()
+                ->with('product')
+                ->whereIn('id', $variantIds)
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get()
                 ->keyBy('id');
 
-            if ($products->count() !== $productIds->count()
-                || $products->contains(fn (Product $product) => $product->status !== 'active' || ! $product->track_inventory)) {
+            if ($variants->count() !== $variantIds->count()) {
                 throw ValidationException::withMessages([
-                    'lines' => 'One or more selected products are no longer available for inventory adjustment.',
+                    'lines' => 'One or more selected variants are no longer available for inventory adjustment.',
                 ]);
             }
 
-            $onHandByProduct = InventoryMovement::query()
-                ->whereIn('product_id', $productIds)
+            $onHandByVariant = InventoryMovement::query()
+                ->whereIn('product_variant_id', $variantIds)
                 ->whereIn('type', ['stock_in', 'stock_out'])
                 ->selectRaw(
-                    'product_id, SUM(CASE WHEN type = ? THEN quantity ELSE -quantity END) AS on_hand',
+                    'product_variant_id, SUM(CASE WHEN type = ? THEN quantity ELSE -quantity END) AS on_hand',
                     ['stock_in']
                 )
-                ->groupBy('product_id')
-                ->pluck('on_hand', 'product_id');
+                ->groupBy('product_variant_id')
+                ->pluck('on_hand', 'product_variant_id');
 
             foreach ($validated['lines'] as $index => $line) {
-                $productId = (int) $line['productId'];
-                $product = $products->get($productId);
+                $variantId = (int) $line['variantId'];
+                $variant = $variants->get($variantId);
                 $quantity = (float) $line['quantity'];
-                $unit = $product->unit;
+                $unit = $variant->product->unit;
                 $requiresWholeNumber = ! in_array($unit->value, ['kg', 'g', 'l', 'ml'], true);
 
                 if ($requiresWholeNumber && floor(abs($quantity)) !== abs($quantity)) {
@@ -113,7 +111,7 @@ class AdjustStock extends Component
                     ]);
                 }
 
-                $currentOnHand = (float) ($onHandByProduct[$productId] ?? 0);
+                $currentOnHand = (float) ($onHandByVariant[$variantId] ?? 0);
                 if ($quantity < 0 && abs($quantity) > $currentOnHand) {
                     throw ValidationException::withMessages([
                         "lines.{$index}.quantity" => 'Only '.number_format(max($currentOnHand, 0), 3, '.', ',').' '.$unit->label().' in stock.',
@@ -133,7 +131,7 @@ class AdjustStock extends Component
             ])->save();
 
             foreach ($validated['lines'] as $line) {
-                $product = $products->get((int) $line['productId']);
+                $variant = $variants->get((int) $line['variantId']);
                 $quantity = (float) $line['quantity'];
                 $isStockIn = $quantity > 0;
                 $type = $isStockIn ? 'adjustment_in' : 'adjustment_out';
@@ -142,12 +140,13 @@ class AdjustStock extends Component
                 $movementNotes = 'Adjustment '.$reference.($reason ? ' — '.$reason : '');
 
                 $adjustment->items()->create([
-                    'product_id' => $product->id,
+                    'product_id' => $variant->product_id,
+                    'product_variant_id' => $variant->id,
                     'type' => $type,
                     'quantity' => abs($quantity),
                 ]);
 
-                $movement = $product->inventoryMovements()->create([
+                $movement = $variant->inventoryMovements()->create([
                     'type' => $movementType,
                     'quantity' => abs($quantity),
                     'notes' => $movementNotes,
@@ -165,36 +164,38 @@ class AdjustStock extends Component
 
     public function render()
     {
-        $products = Product::query()
-            ->where('status', 'active')
-            ->where('track_inventory', true)
+        $products = ProductVariant::query()
+            ->with('product')
             ->withSum([
                 'inventoryMovements as stock_in_quantity' => fn ($query) => $query->where('type', 'stock_in'),
                 'inventoryMovements as stock_out_quantity' => fn ($query) => $query->where('type', 'stock_out'),
             ], 'quantity')
+            ->orderBy('product_id')
             ->orderBy('name')
-            ->get(['id', 'name', 'unit', 'reorder_level'])
-            ->map(fn (Product $product): array => [
-                'id' => $product->id,
-                'name' => $product->name,
-                'unit' => match ($product->unit->value) {
+            ->get()
+            ->map(function (ProductVariant $variant): array {
+                $unit = $variant->product->unit;
+                $unitLabel = match ($unit->value) {
                     'piece' => 'pcs',
-                    'kg', 'g' => $product->unit->value,
+                    'kg', 'g' => $unit->value,
                     'l' => 'L',
                     'ml' => 'mL',
-                    default => ucfirst($product->unit->value),
-                },
-                'step' => in_array($product->unit->value, ['kg', 'g', 'l', 'ml'], true) ? '0.001' : '1',
-                'onHand' => $product->on_hand_quantity,
-                'stockStatus' => $product->stock_status,
-                'subtitle' => number_format($product->on_hand_quantity, 3, '.', ',').' '.match ($product->unit->value) {
-                    'piece' => 'pcs',
-                    'kg', 'g' => $product->unit->value,
-                    'l' => 'L',
-                    'ml' => 'mL',
-                    default => ucfirst($product->unit->value),
-                }.' on hand',
-            ])
+                    default => ucfirst($unit->value),
+                };
+                $stockStatus = $variant->stock_status;
+
+                return [
+                    'id' => $variant->id,
+                    'name' => $variant->name,
+                    'unit' => $unitLabel,
+                    'step' => in_array($unit->value, ['kg', 'g', 'l', 'ml'], true) ? '0.001' : '1',
+                    'onHand' => $variant->on_hand_quantity,
+                    'stockStatus' => $stockStatus,
+                    'subtitle' => collect([$variant->sku, number_format($variant->on_hand_quantity, 3, '.', ',').' '.$unitLabel.' on hand'])
+                        ->filter()
+                        ->implode(' · '),
+                ];
+            })
             ->values();
 
         return view('livewire.user.inventory-movement.adjust-stock', [

@@ -19,6 +19,10 @@ return new class extends Migration
             $table->foreignId('product_id')
                 ->constrained('products')
                 ->restrictOnDelete();
+            $table->foreignId('product_variant_id')
+                ->nullable()
+                ->constrained('product_variants')
+                ->nullOnDelete();
             $table->decimal('quantity', 12, 3);
             $table->decimal('unit_cost', 12, 2);
             $table->decimal('item_discount', 12, 2)->default(0);

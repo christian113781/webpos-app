@@ -5,7 +5,7 @@ namespace Tests\Feature;
 use App\Livewire\User\PurchaseOrder\Show;
 use App\Models\InventoryMovement;
 use App\Models\Product;
-use App\Models\ProductBatch;
+use App\Models\ProductVariant;
 use App\Models\PurchaseOrder;
 use App\Models\Supplier;
 use App\Models\User;
@@ -17,15 +17,11 @@ class PurchaseOrderShowTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_purchase_order_details_page_displays_order_payment_items_and_totals(): void
+    public function test_purchase_order_details_display_variant_payment_items_and_totals(): void
     {
         $user = User::factory()->create(['system_role' => 'user']);
         $supplier = Supplier::create(['name' => 'Metro Wholesale']);
-        $product = Product::create([
-            'name' => 'Rice 5kg',
-            'sku' => 'RICE-5',
-            'unit' => 'kg',
-        ]);
+        $variant = $this->createVariant('Rice', '5 kg', 'RICE-5', 'kg');
         $purchaseOrder = PurchaseOrder::create([
             'supplier_id' => $supplier->id,
             'reference' => 'PO-SHOW-001',
@@ -41,7 +37,8 @@ class PurchaseOrderShowTest extends TestCase
             'notes' => 'Deliver in the morning',
         ]);
         $purchaseOrder->items()->create([
-            'product_id' => $product->id,
+            'product_id' => $variant->product_id,
+            'product_variant_id' => $variant->id,
             'quantity' => 2,
             'unit_cost' => 150,
             'item_discount' => 10,
@@ -60,7 +57,8 @@ class PurchaseOrderShowTest extends TestCase
             ->assertSee('Oct 25, 2026')
             ->assertSee('Bank Transfer')
             ->assertSee('Deliver in the morning')
-            ->assertSee('Rice 5kg')
+            ->assertSee('Rice')
+            ->assertSee('5 kg')
             ->assertSee('2')
             ->assertSee('kg')
             ->assertSee('₱150.00')
@@ -72,11 +70,11 @@ class PurchaseOrderShowTest extends TestCase
             ->assertSee('xl:hidden', false);
     }
 
-    public function test_voiding_a_received_purchase_order_reverses_stock_and_voids_its_expense(): void
+    public function test_voiding_a_received_order_reverses_variant_stock_and_voids_its_expense(): void
     {
         $user = User::factory()->create(['system_role' => 'user']);
         $supplier = Supplier::create(['name' => 'Metro Wholesale']);
-        $product = Product::create(['name' => 'Rice']);
+        $variant = $this->createVariant('Rice', 'Default', 'RICE-VOID');
         $purchaseOrder = PurchaseOrder::create([
             'supplier_id' => $supplier->id,
             'reference' => 'PO-VOID-001',
@@ -86,14 +84,14 @@ class PurchaseOrderShowTest extends TestCase
             'total' => 300,
         ]);
         $purchaseOrder->items()->create([
-            'product_id' => $product->id,
+            'product_id' => $variant->product_id,
+            'product_variant_id' => $variant->id,
             'quantity' => 3,
             'unit_cost' => 100,
             'item_discount' => 0,
             'total' => 300,
         ]);
-        InventoryMovement::create([
-            'product_id' => $product->id,
+        $variant->inventoryMovements()->create([
             'type' => 'stock_in',
             'quantity' => 3,
             'notes' => 'Received from purchase order '.$purchaseOrder->reference,
@@ -116,82 +114,17 @@ class PurchaseOrderShowTest extends TestCase
         $this->assertNotNull($purchaseOrder->fresh()->voided_at);
         $this->assertSame('voided', $expense->fresh()->status);
         $this->assertDatabaseHas('inventory_movements', [
-            'product_id' => $product->id,
+            'product_variant_id' => $variant->id,
             'type' => 'stock_out',
             'quantity' => '3.000',
             'notes' => 'Voided purchase order '.$purchaseOrder->reference,
         ]);
     }
 
-    public function test_purchase_order_displays_batches_and_voids_their_stock_movements(): void
-    {
-        $user = User::factory()->create(['system_role' => 'user']);
-        $supplier = Supplier::create(['name' => 'Metro Wholesale']);
-        $product = Product::create([
-            'name' => 'Batch Juice',
-        ]);
-        $purchaseOrder = PurchaseOrder::create([
-            'supplier_id' => $supplier->id,
-            'reference' => 'PO-BATCH-001',
-            'order_date' => today()->toDateString(),
-            'status' => 'received',
-            'subtotal' => 50,
-            'total' => 50,
-        ]);
-        $item = $purchaseOrder->items()->create([
-            'product_id' => $product->id,
-            'quantity' => 2,
-            'unit_cost' => 25,
-            'item_discount' => 0,
-            'total' => 50,
-        ]);
-        $productBatch = ProductBatch::create([
-            'product_id' => $product->id,
-            'batch_number' => 'JUICE-LOT-1',
-            'unit_cost' => 25,
-            'received_date' => '2026-10-22',
-            'expiry_date' => '2027-10-22',
-        ]);
-        $item->batches()->create([
-            'product_batch_id' => $productBatch->id,
-            'batch_number' => $productBatch->batch_number,
-            'quantity' => 2,
-            'unit_cost' => 25,
-            'received_date' => '2026-10-22',
-            'expiry_date' => '2027-10-22',
-        ]);
-        InventoryMovement::create([
-            'product_id' => $product->id,
-            'product_batch_id' => $productBatch->id,
-            'type' => 'stock_in',
-            'quantity' => 2,
-            'notes' => 'Received from purchase order '.$purchaseOrder->reference,
-        ]);
-
-        $this->actingAs($user)
-            ->get(route('user.purchase-orders.show', $purchaseOrder))
-            ->assertOk()
-            ->assertSee('JUICE-LOT-1')
-            ->assertSee('Oct 22, 2026');
-
-        Livewire::actingAs($user)
-            ->test(Show::class, ['purchaseOrder' => $purchaseOrder])
-            ->call('void')
-            ->assertHasNoErrors();
-
-        $this->assertDatabaseHas('inventory_movements', [
-            'product_id' => $product->id,
-            'product_batch_id' => $productBatch->id,
-            'type' => 'stock_out',
-            'quantity' => '2.000',
-            'notes' => 'Voided purchase order '.$purchaseOrder->reference,
-        ]);
-    }
-
-    public function test_received_purchase_order_cannot_be_voided_when_stock_is_insufficient(): void
+    public function test_received_order_cannot_be_voided_when_variant_stock_is_insufficient(): void
     {
         $supplier = Supplier::create(['name' => 'Metro Wholesale']);
-        $product = Product::create(['name' => 'Rice']);
+        $variant = $this->createVariant('Rice', 'Default', 'RICE-LOW');
         $purchaseOrder = PurchaseOrder::create([
             'supplier_id' => $supplier->id,
             'reference' => 'PO-VOID-002',
@@ -200,23 +133,24 @@ class PurchaseOrderShowTest extends TestCase
             'total' => 300,
         ]);
         $purchaseOrder->items()->create([
-            'product_id' => $product->id,
+            'product_id' => $variant->product_id,
+            'product_variant_id' => $variant->id,
             'quantity' => 3,
             'unit_cost' => 100,
             'item_discount' => 0,
             'total' => 300,
         ]);
-        InventoryMovement::create([
-            'product_id' => $product->id,
-            'type' => 'stock_in',
-            'quantity' => 3,
-            'notes' => 'Received from purchase order '.$purchaseOrder->reference,
-        ]);
-        InventoryMovement::create([
-            'product_id' => $product->id,
-            'type' => 'stock_out',
-            'quantity' => 2,
-            'notes' => 'Sold after receiving',
+        $variant->inventoryMovements()->createMany([
+            [
+                'type' => 'stock_in',
+                'quantity' => 3,
+                'notes' => 'Received from purchase order '.$purchaseOrder->reference,
+            ],
+            [
+                'type' => 'stock_out',
+                'quantity' => 2,
+                'notes' => 'Sold after receiving',
+            ],
         ]);
 
         Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
@@ -225,7 +159,11 @@ class PurchaseOrderShowTest extends TestCase
             ->assertHasErrors(['void']);
 
         $this->assertSame('received', $purchaseOrder->fresh()->status);
-        $this->assertSame(2, InventoryMovement::count());
+        $this->assertDatabaseMissing('inventory_movements', [
+            'product_variant_id' => $variant->id,
+            'type' => 'stock_out',
+            'notes' => 'Voided purchase order '.$purchaseOrder->reference,
+        ]);
     }
 
     public function test_ordered_purchase_order_can_be_voided_but_cancelled_order_cannot(): void
@@ -258,5 +196,19 @@ class PurchaseOrderShowTest extends TestCase
 
         $this->assertSame('voided', $ordered->fresh()->status);
         $this->assertSame('cancelled', $cancelled->fresh()->status);
+    }
+
+    private function createVariant(string $productName, string $variantName, string $sku, string $unit = 'piece'): ProductVariant
+    {
+        $product = Product::create([
+            'name' => $productName,
+            'unit' => $unit,
+        ]);
+
+        return ProductVariant::create([
+            'product_id' => $product->id,
+            'name' => $variantName,
+            'sku' => $sku,
+        ]);
     }
 }

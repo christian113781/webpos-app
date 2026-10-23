@@ -19,6 +19,12 @@ return new class extends Migration
             $table->date('expense_date');
             $table->string('payment_method', 30)->nullable();
             $table->text('notes')->nullable();
+            $table->string('status', 20)->default('active');
+            $table->foreignId('purchase_order_id')
+                ->nullable()
+                ->unique()
+                ->constrained('purchase_orders')
+                ->nullOnDelete();
             $table->timestamps();
         });
     }

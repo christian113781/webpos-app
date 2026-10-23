@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Livewire\User\PurchaseOrder\Create;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,8 +19,12 @@ class PurchaseOrderCreatePageTest extends TestCase
     {
         $user = User::factory()->create(['system_role' => 'user']);
         Supplier::create(['name' => 'Metro Wholesale']);
-        Product::create([
+        $product = Product::create([
             'name' => 'Rice 5kg',
+        ]);
+        ProductVariant::create([
+            'product_id' => $product->id,
+            'name' => '5 kg',
             'sku' => 'RICE-5',
             'cost_price' => 250,
         ]);
@@ -39,42 +44,17 @@ class PurchaseOrderCreatePageTest extends TestCase
             ->assertDontSee('Add a short description for this purchase order...')
             ->assertSee('Create an expense?')
             ->assertSee('Items to Order')
-            ->assertSee('Select product')
-            ->assertSee('Show batches', false)
-            ->assertSee('line.batchExpanded ? \'Hide batches\' : \'Show batches\'', false)
-            ->assertSee('line.batchExpanded ? \'M5 12h14\' : \'M12 5v14M5 12h14\'', false)
-            ->assertSee('toggleBatches(line)', false)
-            ->assertSee('(line.batches ?? []).length > 0', false)
-            ->assertSee('x-show="Boolean(productOf(line.productId))"', false)
-            ->assertSee('if (line.batches.length === 0) this.addBatch(line)', false)
-            ->assertSee('col-span-2 flex min-w-0 items-center justify-center gap-1', false)
-            ->assertSee('focus-visible:ring-brand-500', false)
+            ->assertSee('Search and select product variant')
+            ->assertSee('x-model="line.variantId"', false)
             ->assertDontSee('border border-gray-200 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-50', false)
-            ->assertDontSee('Batch Info')
-            ->assertSee('Batch Number')
+            ->assertSee('Product variant')
+            ->assertSee('5 kg')
+            ->assertDontSee('Rice 5kg — 5 kg')
             ->assertSee('Selling price')
             ->assertSee('sellingPrice', false)
             ->assertSee('readonly', false)
             ->assertSee('Quantity')
-            ->assertSee('Unit Cost')
-            ->assertSee('Received Date')
-            ->assertSee('Expiration Date')
-            ->assertSee('Add batch')
-            ->assertSee('addBatch(line)', false)
-            ->assertSee('defaultBatchName(line)', false)
-            ->assertSee("const baseName = 'Batch ' + dateLabel", false)
-            ->assertSee("name = baseName + ' - ' + suffix++", false)
-            ->assertSee('removeBatch(line, batch.id)', false)
-            ->assertSee('x-model="batch.batchNumber"', false)
-            ->assertSee('syncBatchTotals(line)', false)
-            ->assertSee('x-model="batch.quantity"', false)
-            ->assertSee('placeholder="0"', false)
-            ->assertSee('class="space-y-1"', false)
-            ->assertSee('text-gray-400 opacity-60 transition-colors hover:bg-red-50 hover:text-red-600 hover:opacity-100 focus-visible:opacity-100', false)
-            ->assertSee('viewBox="0 0 24 24"', false)
-            ->assertSee('1.5rem_minmax(0,1fr)', false)
-            ->assertSee('x-model="batch.receivedDate"', false)
-            ->assertSee('x-model="batch.expiryDate"', false)
+            ->assertSee('Unit cost (₱)')
             ->assertSee('Stock')
             ->assertSee('Unit cost')
             ->assertSee('Discount (₱)')
@@ -82,7 +62,7 @@ class PurchaseOrderCreatePageTest extends TestCase
             ->assertSee('Add new line')
             ->assertSee('Load stock')
             ->assertSee('purchase-order-load-stock', false)
-            ->assertSee('Select multiple products to add to this purchase order.')
+            ->assertSee('Select multiple product variants to add to this purchase order.')
             ->assertSee('Low stock')
             ->assertSee('Out of stock')
             ->assertSee('All items (ignore stock status)')
@@ -106,7 +86,7 @@ class PurchaseOrderCreatePageTest extends TestCase
             ->assertSee('Save')
             ->assertSee('Cancel')
             ->assertSee('Metro Wholesale')
-            ->assertSee('Rice 5kg')
+            ->assertDontSee('Rice 5kg')
             ->assertSee('Save your order or keep it as a draft.')
             ->assertSeeInOrder([
                 'Purchase order details',
@@ -119,10 +99,12 @@ class PurchaseOrderCreatePageTest extends TestCase
             ]);
     }
 
-    public function test_payment_method_and_date_default_to_cash_and_today(): void
+    public function test_purchase_order_statuses_default_to_received_and_paid(): void
     {
         Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
             ->test(Create::class)
+            ->assertSet('status', 'received')
+            ->assertSet('paymentStatus', 'paid')
             ->assertSet('paymentMethod', 'cash')
             ->assertSet('paymentDate', now()->toDateString());
     }

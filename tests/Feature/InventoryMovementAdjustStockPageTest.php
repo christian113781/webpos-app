@@ -24,7 +24,8 @@ class InventoryMovementAdjustStockPageTest extends TestCase
             'category_id' => $category->id,
             'unit' => 'can',
         ]);
-        $product->inventoryMovements()->create([
+        $variant = $product->variants()->create(['name' => '330ml']);
+        $variant->inventoryMovements()->create([
             'type' => 'stock_in',
             'quantity' => 24,
             'notes' => 'Opening stock',
@@ -37,11 +38,11 @@ class InventoryMovementAdjustStockPageTest extends TestCase
             ->assertSee('Items')
             ->assertSee('Current Stock')
             ->assertSee('Stock After')
-            ->assertSee('Select product')
+            ->assertSee('Select product variant')
             ->assertSee('Add new line')
             ->assertSee('Load stock')
             ->assertSee('adjustment-load-stock', false)
-            ->assertSee('Select multiple products to add to this stock adjustment.')
+            ->assertSee('Select multiple variants to add to this stock adjustment.')
             ->assertSee('Low stock')
             ->assertSee('Out of stock')
             ->assertSee('All items (ignore stock status)')
@@ -54,7 +55,8 @@ class InventoryMovementAdjustStockPageTest extends TestCase
             ->assertSee('clearItems()', false)
             ->assertDontSee('There are no active inventory-tracked products available to adjust.')
             ->assertSee('Notes')
-            ->assertSee('Coca-Cola')
+            ->assertSee('330ml')
+            ->assertDontSee('Coca-Cola — 330ml')
             ->assertSee('xl:grid-cols', false)
             ->assertSee('max-xl:bg-gray-50', false)
             ->assertSee('Save');
@@ -76,7 +78,9 @@ class InventoryMovementAdjustStockPageTest extends TestCase
             'category_id' => $category->id,
             'unit' => 'piece',
         ]);
-        $soda->inventoryMovements()->create([
+        $sodaVariant = $soda->variants()->create(['name' => '330ml', 'sku' => 'SODA-330']);
+        $chipsVariant = $chips->variants()->create(['name' => 'Single']);
+        $sodaVariant->inventoryMovements()->create([
             'type' => 'stock_in',
             'quantity' => 10,
             'notes' => 'Opening stock',
@@ -87,8 +91,8 @@ class InventoryMovementAdjustStockPageTest extends TestCase
             ->set('adjustmentDate', now()->subDay()->toDateString())
             ->set('notes', 'Weekly stock count')
             ->set('lines', [
-                ['productId' => (string) $soda->id, 'quantity' => '-3', 'reason' => 'Damaged'],
-                ['productId' => (string) $chips->id, 'quantity' => '5', 'reason' => 'Restock'],
+                ['variantId' => (string) $sodaVariant->id, 'quantity' => '-3', 'reason' => 'Damaged'],
+                ['variantId' => (string) $chipsVariant->id, 'quantity' => '5', 'reason' => 'Restock'],
             ])
             ->call('save')
             ->assertHasNoErrors()
@@ -102,22 +106,24 @@ class InventoryMovementAdjustStockPageTest extends TestCase
         ]);
         $this->assertDatabaseHas('inventory_adjustment_items', [
             'product_id' => $soda->id,
+            'product_variant_id' => $sodaVariant->id,
             'type' => 'adjustment_out',
             'quantity' => 3,
         ]);
         $this->assertDatabaseHas('inventory_adjustment_items', [
             'product_id' => $chips->id,
+            'product_variant_id' => $chipsVariant->id,
             'type' => 'adjustment_in',
             'quantity' => 5,
         ]);
         $this->assertDatabaseHas('inventory_movements', [
-            'product_id' => $soda->id,
+            'product_variant_id' => $sodaVariant->id,
             'type' => 'stock_out',
             'quantity' => 3,
             'notes' => 'Adjustment '.InventoryAdjustment::first()->reference.' — Damaged',
         ]);
         $this->assertDatabaseHas('inventory_movements', [
-            'product_id' => $chips->id,
+            'product_variant_id' => $chipsVariant->id,
             'type' => 'stock_in',
             'quantity' => 5,
             'notes' => 'Adjustment '.InventoryAdjustment::first()->reference.' — Restock',
@@ -137,7 +143,8 @@ class InventoryMovementAdjustStockPageTest extends TestCase
             'category_id' => $category->id,
             'unit' => 'can',
         ]);
-        $product->inventoryMovements()->create([
+        $variant = $product->variants()->create(['name' => '330ml']);
+        $variant->inventoryMovements()->create([
             'type' => 'stock_in',
             'quantity' => 4,
             'notes' => 'Opening stock',
@@ -146,14 +153,14 @@ class InventoryMovementAdjustStockPageTest extends TestCase
         Livewire::actingAs($user)
             ->test(AdjustStock::class)
             ->set('lines', [
-                ['productId' => (string) $product->id, 'quantity' => '-5', 'reason' => 'Damaged'],
+                ['variantId' => (string) $variant->id, 'quantity' => '-5', 'reason' => 'Damaged'],
             ])
             ->call('save')
             ->assertHasErrors(['lines.0.quantity']);
 
         $this->assertDatabaseCount('inventory_adjustments', 0);
         $this->assertDatabaseCount('inventory_adjustment_items', 0);
-        $this->assertSame(1, $product->inventoryMovements()->count());
+        $this->assertSame(1, $variant->inventoryMovements()->count());
     }
 
     public function test_save_rejects_duplicate_products_and_fractional_whole_unit_quantities(): void
@@ -165,20 +172,21 @@ class InventoryMovementAdjustStockPageTest extends TestCase
             'category_id' => $category->id,
             'unit' => 'piece',
         ]);
+        $variant = $product->variants()->create(['name' => 'Single']);
 
         Livewire::actingAs($user)
             ->test(AdjustStock::class)
             ->set('lines', [
-                ['productId' => (string) $product->id, 'quantity' => '1.5', 'reason' => 'Restock'],
-                ['productId' => (string) $product->id, 'quantity' => '2', 'reason' => 'Restock'],
+                ['variantId' => (string) $variant->id, 'quantity' => '1.5', 'reason' => 'Restock'],
+                ['variantId' => (string) $variant->id, 'quantity' => '2', 'reason' => 'Restock'],
             ])
             ->call('save')
-            ->assertHasErrors(['lines.0.productId', 'lines.1.productId']);
+            ->assertHasErrors(['lines.0.variantId', 'lines.1.variantId']);
 
         Livewire::actingAs($user)
             ->test(AdjustStock::class)
             ->set('lines', [
-                ['productId' => (string) $product->id, 'quantity' => '1.5', 'reason' => 'Restock'],
+                ['variantId' => (string) $variant->id, 'quantity' => '1.5', 'reason' => 'Restock'],
             ])
             ->call('save')
             ->assertHasErrors(['lines.0.quantity']);

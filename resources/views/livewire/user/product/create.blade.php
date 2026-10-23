@@ -3,15 +3,15 @@
     tabindex="-1"
     class="flex-1 px-4 sm:px-6 py-6 max-w-[1600px] mx-auto w-full"
     x-data="{
+        isEditing: @js($isEditing),
         productName: $wire.entangle('name'),
         sku: $wire.entangle('sku'),
+        hasVariants: $wire.entangle('hasVariants'),
+        baseVariantName: $wire.entangle('baseVariantName'),
         existingSkus: @js($existingSkus),
-        generateSku(name) {
+        skuBase(name) {
             const words = name.match(/[a-z0-9]+/gi) ?? [];
-            if (!words.length) {
-                this.sku = '';
-                return;
-            }
+            if (!words.length) return '';
 
             const prefix = words.map(word => word.slice(0, 3).toUpperCase()).join('-');
             const pattern = new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-([0-9]+)$', 'i');
@@ -20,8 +20,41 @@
                 return match ? Math.max(max, Number(match[1])) : max;
             }, 0);
 
-            this.sku = prefix + '-' + (lastNumber + 1);
-        }
+            return prefix + '-' + (lastNumber + 1);
+        },
+        variantSkuSuffix(variantName, productName) {
+            const productParts = productName.match(/[a-z0-9]+/gi) ?? [];
+            const variantParts = variantName.match(/[a-z0-9]+/gi) ?? [];
+            const hasProductPrefix = productParts.length > 0 && productParts.every((word, index) =>
+                variantParts[index]?.toLowerCase() === word.toLowerCase()
+            );
+            const suffixParts = hasProductPrefix
+                ? variantParts.slice(productParts.length)
+                : variantParts;
+
+            return suffixParts
+                .map(part => part.match(/\d+/g)?.join('') || part.slice(0, 3).toUpperCase())
+                .join('-');
+        },
+        generateSku(name) {
+            const base = this.skuBase(name);
+            if (!base) {
+                this.sku = '';
+                return;
+            }
+
+            const suffix = this.hasVariants && this.baseVariantName.trim()
+                ? this.variantSkuSuffix(this.baseVariantName.trim(), name)
+                : '';
+            this.sku = base + (suffix ? '-' + suffix : '');
+        },
+        generateVariantSku(variant) {
+            if (this.isEditing && variant.recordId) return;
+
+            const base = this.skuBase(this.productName);
+            const suffix = this.variantSkuSuffix(variant.name.trim(), this.productName);
+            variant.sku = base && suffix ? base + '-' + suffix : base;
+        },
     }"
 >
 
@@ -41,21 +74,14 @@
                             <p class="text-xs text-gray-400 mt-0.5">Enter the basic information for this product.</p>
                         </div>
 
-                        <div x-data="{ inPosCatalog: true }" class="flex items-start gap-3 sm:max-w-xs">
-                            <button
-                                type="button"
-                                role="switch"
-                                aria-label="Add to POS catalog"
-                                :aria-checked="inPosCatalog.toString()"
-                                @click="inPosCatalog = !inPosCatalog"
-                                class="switch shrink-0"
-                            >
-                                <span></span>
-                            </button>
-                            <div>
-                                <p class="text-sm font-semibold text-gray-800">Add to POS catalog</p>
-                                <p class="mt-0.5 text-xs text-gray-500">Show this item in POS.</p>
-                            </div>
+                        <div x-data="{ inPosCatalog: true }">
+                            <x-ui.switch
+                                label="Add to POS catalog"
+                                description="Show this item in POS."
+                                inline
+                                checked
+                                x-model="inPosCatalog"
+                            />
                         </div>
                     </div>
 
@@ -109,27 +135,63 @@
 
             <section aria-labelledby="product-variants-heading" x-data="{
                 isEditing: @js($isEditing),
-                hasVariants: false,
-                baseVariantName: '',
+                hasVariants: $wire.entangle('hasVariants'),
+                baseVariantName: $wire.entangle('baseVariantName'),
+                baseVariantNameFollowsProductName: true,
                 taxClassification: 'vatable',
-                variants: [],
-                nextVariantId: 3,
+                variants: $wire.entangle('variants'),
+                nextVariantId: @js($nextVariantId),
                 addVariant() {
-                    this.variants.push({
-                        id: this.nextVariantId++,
-                        name: '',
+                    const id = this.nextVariantId++;
+                    const variant = {
+                        id,
+                        recordId: null,
+                        name: this.productName.trim(),
                         sku: '',
                         barcode: '',
                         costPrice: '',
                         sellingPrice: '',
                         initialStock: '',
                         reorderLevel: '',
+                    };
+                    this.generateVariantSku(variant);
+                    this.variants.push(variant);
+                },
+                ensureVariantNames() {
+                    if (this.baseVariantNameFollowsProductName) {
+                        this.baseVariantName = this.productName.trim();
+                    }
+
+                    this.variants.forEach((variant, index) => {
+                        if (!variant.name.trim()) {
+                            variant.name = 'Variant #' + (Number(variant.id) - 1 || index + 2);
+                        }
                     });
+                },
+                generateVariantSkus() {
+                    this.variants.forEach(variant => this.generateVariantSku(variant));
+                },
+                variantTitle(variantName, index) {
+                    const name = variantName.trim() || 'Variant #' + (index + 2);
+                    const product = this.productName.trim();
+                    if (!product) return name;
+
+                    const namePrefix = name.slice(0, product.length);
+                    const separator = name.charAt(product.length);
+                    const followsProductName = namePrefix.toLowerCase() === product.toLowerCase()
+                        && (separator === '' || /[\s:,-]/.test(separator));
+                    const suffix = followsProductName
+                        ? name.slice(product.length).replace(/^[\s:,-]+/, '').trim()
+                        : name;
+
+                    return suffix ? product + ': ' + suffix : product;
                 },
                 removeVariant(id) {
                     this.variants = this.variants.filter(variant => variant.id !== id);
                 }
-            }">
+            }"
+                x-effect="if (hasVariants && !isEditing) { ensureVariantNames(); generateSku(productName); generateVariantSkus(); }"
+            >
                 <x-ui.card>
                     <div class="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                         <div>
@@ -137,22 +199,12 @@
                             <p class="mt-0.5 text-xs text-gray-400">Set up how this product is sold and stocked.</p>
                         </div>
 
-                        <div x-show="!isEditing" class="flex items-start gap-3 sm:max-w-xs">
-                            <button
-                                type="button"
-                                role="switch"
-                                aria-label="This product has multiple variants"
-                                :aria-checked="hasVariants.toString()"
-                                @click="hasVariants = !hasVariants"
-                                class="switch mt-0.5 shrink-0"
-                            >
-                                <span></span>
-                            </button>
-                            <div>
-                                <p class="text-sm font-semibold text-gray-800">This product has multiple variants</p>
-                                <p class="mt-0.5 text-xs text-gray-500">Enable if this product comes in different sizes, flavors, or packs.</p>
-                            </div>
-                        </div>
+                        <x-ui.switch
+                            label="This product has multiple variants"
+                            description="Enable if this product comes in different sizes, flavors, or packs."
+                            inline
+                            x-model="hasVariants"
+                        />
                     </div>
 
                     <article
@@ -164,7 +216,7 @@
                                 <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01M8 6h8M8 12h8M8 18h8" />
                                 </svg>
-                                <h3 x-text="(productName.trim() ? productName.trim() + ': ' : '') + (baseVariantName.trim() || 'Variant #1')"></h3>
+                                <h3 x-text="(baseVariantName.trim() || 'Variant #1')"></h3>
                             </div>
                             <button
                                 type="button"
@@ -186,6 +238,7 @@
                                     label="Variant Name"
                                     required
                                     x-model="baseVariantName"
+                                    x-on:input="baseVariantNameFollowsProductName = false"
                                     placeholder="e.g. 500ml"
                                 />
                             </div>
@@ -263,7 +316,7 @@
                                         <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01M8 6h8M8 12h8M8 18h8" />
                                         </svg>
-                                        <h3 x-text="(productName.trim() ? productName.trim() + ': ' : '') + (variant.name.trim() || 'Variant #' + (index + 2))"></h3>
+                                        <h3 x-text="variantTitle(variant.name, index)"></h3>
                                     </div>
                                     <button
                                         type="button"
@@ -280,6 +333,7 @@
                                         label="Variant Name"
                                         required
                                         x-model="variant.name"
+                                        x-on:input="generateVariantSku(variant)"
                                         placeholder="e.g. 500ml"
                                     />
                                     <x-ui.input

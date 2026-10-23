@@ -22,6 +22,11 @@ return new class extends Migration
                 ->constrained('products')
                 ->cascadeOnDelete();
 
+            $table->foreignId('product_variant_id')
+                ->nullable()
+                ->constrained('product_variants')
+                ->nullOnDelete();
+
             $table->string('type', 30);
 
             $table->decimal('quantity', 12, 3);

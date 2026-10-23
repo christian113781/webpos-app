@@ -89,6 +89,7 @@
                                 <tr wire:key="expense-row-{{ $expense->id }}" class="hover:bg-gray-50/60 transition-colors">
                                     <td class="px-4 py-3 whitespace-nowrap">
                                         <span class="block text-gray-600">{{ $expense->expense_date->format('M d, Y') }}</span>
+                                        <span class="block mt-0.5 text-xs text-gray-400">{{ $expense->created_at->copy()->timezone('Asia/Manila')->format('g:i A') }}</span>
                                     </td>
                                     <th scope="row" class="px-3 py-3 text-start">
                                         <span class="block font-semibold text-gray-800">{{ $expense->category }}</span>
@@ -137,7 +138,10 @@
                                 <div class="min-w-0 flex-1">
                                     <p class="font-semibold text-gray-900 break-words">{{ $expense->category }}</p>
                                     <p class="mt-0.5 text-sm text-gray-600 break-words">{{ $expense->description }}</p>
-                                    <p class="mt-1 text-xs text-gray-400">{{ $expense->expense_date->format('M d, Y') }}</p>
+                                    <p class="mt-1 text-xs text-gray-400">
+                                        {{ $expense->expense_date->format('M d, Y') }}
+                                        <span class="block mt-0.5">{{ $expense->created_at->copy()->timezone('Asia/Manila')->format('g:i A') }}</span>
+                                    </p>
                                     @if ($expense->status === 'voided')
                                         <span class="mt-2 inline-flex"><x-ui.badge color="red" dot>Voided</x-ui.badge></span>
                                     @endif

@@ -21,6 +21,7 @@ return new class extends Migration
             $table->date('order_date');
             $table->date('expected_date')->nullable();
             $table->string('status', 30)->default('draft');
+            $table->timestamp('voided_at')->nullable();
             $table->string('payment_status', 20)->default('unpaid');
             $table->string('payment_method', 30)->nullable();
             $table->date('payment_date')->nullable();

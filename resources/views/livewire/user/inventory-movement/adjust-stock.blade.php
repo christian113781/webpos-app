@@ -3,7 +3,7 @@
     tabindex="-1"
     class="flex-1 px-4 sm:px-6 py-6 space-y-6 max-w-[1600px] mx-auto w-full"
     x-data="{
-        products: @js($products),
+        variants: @js($products),
         reasons: ['Inventory Audit', 'Wastage', 'Restock', 'Repacked', 'Damaged', 'Expired', 'Theft', 'Miscounted', 'Returned', 'Used in Promotion', 'Used in Store', 'Other'],
         today: @js(now()->toDateString()),
         date: $wire.entangle('adjustmentDate'),
@@ -14,39 +14,39 @@
         loadLowStock: true,
         loadOutOfStock: true,
         loadAllProducts: false,
-        productOf(id) {
-            return this.products.find(product => Number(product.id) === Number(id)) ?? null;
+        variantOf(id) {
+            return this.variants.find(variant => Number(variant.id) === Number(id)) ?? null;
         },
         filteredLoadProducts() {
-            return this.products.filter(product => {
+            return this.variants.filter(variant => {
                 const matchesStock = this.loadAllProducts
-                    || (product.stockStatus === 'low_stock' && this.loadLowStock)
-                    || (product.stockStatus === 'out_of_stock' && this.loadOutOfStock);
+                    || (variant.stockStatus === 'low_stock' && this.loadLowStock)
+                    || (variant.stockStatus === 'out_of_stock' && this.loadOutOfStock);
 
                 return matchesStock;
             });
         },
         remainingLineSlots() {
-            return Math.max(50 - this.lines.filter(line => line.productId !== '').length, 0);
+            return Math.max(50 - this.lines.filter(line => line.variantId !== '').length, 0);
         },
-        isProductAlreadyInAdjustment(productId) {
-            return this.lines.some(line => String(line.productId) === String(productId));
+        isVariantAlreadyInAdjustment(variantId) {
+            return this.lines.some(line => String(line.variantId) === String(variantId));
         },
         openLoadStock() {
             this.selectedLoadProductIds = [];
             this.$dispatch('open-modal', { name: 'adjustment-load-stock' });
         },
         loadSelectedStock() {
-            const selectedProducts = this.products.filter(product =>
-                this.selectedLoadProductIds.includes(String(product.id))
-                && !this.isProductAlreadyInAdjustment(product.id)
+            const selectedVariants = this.variants.filter(variant =>
+                this.selectedLoadProductIds.includes(String(variant.id))
+                && !this.isVariantAlreadyInAdjustment(variant.id)
             );
 
-            selectedProducts.forEach(product => {
-                const emptyLine = this.lines.find(line => !line.productId);
+            selectedVariants.forEach(variant => {
+                const emptyLine = this.lines.find(line => !line.variantId);
                 const newLine = {
                     id: emptyLine?.id ?? this.nextId++,
-                    productId: String(product.id),
+                    variantId: String(variant.id),
                     quantity: '',
                     reason: '',
                 };
@@ -62,14 +62,14 @@
             this.$dispatch('close-modal', { name: 'adjustment-load-stock' });
         },
         stockAfter(line) {
-            const product = this.productOf(line.productId);
-            return product ? Number(product.onHand) + (Number(line.quantity) || 0) : 0;
+            const variant = this.variantOf(line.variantId);
+            return variant ? Number(variant.onHand) + (Number(line.quantity) || 0) : 0;
         },
         formatQuantity(value) {
             return Number(value || 0).toLocaleString('en-PH', { maximumFractionDigits: 3 });
         },
         filledCount() {
-            return this.lines.filter(line => line.productId !== '').length;
+            return this.lines.filter(line => line.variantId !== '').length;
         },
         quantityIn() {
             return this.lines.reduce((total, line) => total + Math.max(Number(line.quantity) || 0, 0), 0);
@@ -78,7 +78,7 @@
             return this.lines.reduce((total, line) => total + Math.max(-(Number(line.quantity) || 0), 0), 0);
         },
         addLine() {
-            this.lines.push({ id: this.nextId++, productId: '', quantity: '', reason: '' });
+            this.lines.push({ id: this.nextId++, variantId: '', quantity: '', reason: '' });
         },
         removeLine(id) {
             if (this.lines.length > 1) {
@@ -86,16 +86,16 @@
             }
         },
         clearItems() {
-            this.lines = [{ id: this.nextId++, productId: '', quantity: '', reason: '' }];
+            this.lines = [{ id: this.nextId++, variantId: '', quantity: '', reason: '' }];
         },
-        productAlreadyAdded(line, productId) {
-            return this.lines.some(item => item.id !== line.id && Number(item.productId) === Number(productId));
+        variantAlreadyAdded(line, variantId) {
+            return this.lines.some(item => item.id !== line.id && Number(item.variantId) === Number(variantId));
         }
     }"
 >
     <div class="min-w-0">
         <h1 class="text-xl sm:text-2xl font-bold text-gray-900 mt-1">Stock Adjustment</h1>
-        <p class="text-sm text-gray-500 mt-0.5">Record stock changes for one or more products in a single adjustment.</p>
+        <p class="text-sm text-gray-500 mt-0.5">Record stock changes for individual product variants in a single adjustment.</p>
     </div>
 
     <form wire:submit="save" class="space-y-6" aria-label="Stock adjustment form">
@@ -153,10 +153,10 @@
                                 name="product"
                                 type="product"
                                 :items="$products"
-                                x-model="line.productId"
-                                disabled-ids="lines.filter(item => item.id !== line.id && item.productId !== '').map(item => String(item.productId))"
-                                label="Product"
-                                placeholder="Select product"
+                                x-model="line.variantId"
+                                disabled-ids="lines.filter(item => item.id !== line.id && item.variantId !== '').map(item => String(item.variantId))"
+                                label="Product variant"
+                                placeholder="Select product variant"
                                 required
                                 label-class="xl:sr-only"
                             />
@@ -166,7 +166,7 @@
                             <p class="xl:hidden text-xs font-medium text-gray-500 mb-0.5">Current Stock</p>
                             <p
                                 class="text-sm font-semibold text-brand-600 tabular-nums"
-                                x-text="productOf(line.productId) ? formatQuantity(productOf(line.productId).onHand) + ' ' + productOf(line.productId).unit : '0 pcs'"
+                                x-text="variantOf(line.variantId) ? formatQuantity(variantOf(line.variantId).onHand) + ' ' + variantOf(line.variantId).unit : '0 pcs'"
                             ></p>
                         </div>
 
@@ -179,14 +179,14 @@
                                     :id="'adjustment-quantity-' + line.id"
                                     type="number"
                                     class="field pe-12"
-                                    :step="productOf(line.productId)?.step ?? '1'"
+                                    :step="variantOf(line.variantId)?.step ?? '1'"
                                     x-model="line.quantity"
                                     placeholder="+10 or -5"
                                     required
                                 >
                                 <span
                                     class="absolute end-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none"
-                                    x-text="productOf(line.productId)?.unit ?? ''"
+                                    x-text="variantOf(line.variantId)?.unit ?? ''"
                                 ></span>
                             </div>
                         </div>
@@ -196,7 +196,7 @@
                             <p
                                 class="text-sm font-semibold tabular-nums"
                                 :class="stockAfter(line) < 0 ? 'text-red-500' : 'text-brand-600'"
-                                x-text="productOf(line.productId) ? formatQuantity(stockAfter(line)) + ' ' + productOf(line.productId).unit : '0 pcs'"
+                                x-text="variantOf(line.variantId) ? formatQuantity(stockAfter(line)) + ' ' + variantOf(line.variantId).unit : '0 pcs'"
                             ></p>
                         </div>
 
@@ -299,7 +299,7 @@
     <x-ui.modal
         name="adjustment-load-stock"
         title="Load stock"
-        subtitle="Select multiple products to add to this stock adjustment."
+        subtitle="Select multiple variants to add to this stock adjustment."
         max-width="lg"
     >
         <div class="space-y-4">
@@ -320,30 +320,30 @@
             </fieldset>
 
             <div class="max-h-72 overflow-y-auto rounded-xl border border-gray-100">
-                <template x-for="product in filteredLoadProducts()" :key="'adjustment-load-product-' + product.id">
+                <template x-for="variant in filteredLoadProducts()" :key="'adjustment-load-variant-' + variant.id">
                     <label class="flex cursor-pointer items-start gap-3 border-b border-gray-100 px-3 py-3 last:border-b-0 hover:bg-gray-50">
                         <input
                             type="checkbox"
                             x-model="selectedLoadProductIds"
-                            :value="String(product.id)"
-                            :disabled="isProductAlreadyInAdjustment(product.id) || (!selectedLoadProductIds.includes(String(product.id)) && selectedLoadProductIds.length >= remainingLineSlots())"
+                            :value="String(variant.id)"
+                            :disabled="isVariantAlreadyInAdjustment(variant.id) || (!selectedLoadProductIds.includes(String(variant.id)) && selectedLoadProductIds.length >= remainingLineSlots())"
                             class="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                         >
                         <span class="min-w-0 flex-1">
                             <span class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                                <span class="truncate text-sm font-semibold text-gray-800" x-text="product.name"></span>
+                                <span class="truncate text-sm font-semibold text-gray-800" x-text="variant.name"></span>
                                 <span
                                     class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold"
                                     :class="{
-                                        'bg-amber-50 text-amber-700': product.stockStatus === 'low_stock',
-                                        'bg-red-50 text-red-700': product.stockStatus === 'out_of_stock',
-                                        'bg-gray-100 text-gray-500': product.stockStatus === 'in_stock'
+                                        'bg-amber-50 text-amber-700': variant.stockStatus === 'low_stock',
+                                        'bg-red-50 text-red-700': variant.stockStatus === 'out_of_stock',
+                                        'bg-gray-100 text-gray-500': variant.stockStatus === 'in_stock'
                                     }"
-                                    x-text="product.stockStatus.replaceAll('_', ' ')"
+                                    x-text="variant.stockStatus.replaceAll('_', ' ')"
                                 ></span>
                             </span>
-                            <span class="mt-1 block text-xs text-gray-500" x-text="'Current stock: ' + product.subtitle"></span>
-                            <span x-show="isProductAlreadyInAdjustment(product.id)" class="mt-1 block text-xs text-gray-400">Already added to this adjustment</span>
+                            <span class="mt-1 block text-xs text-gray-500" x-text="'Current stock: ' + variant.subtitle"></span>
+                            <span x-show="isVariantAlreadyInAdjustment(variant.id)" class="mt-1 block text-xs text-gray-400">Already added to this adjustment</span>
                         </span>
                     </label>
                 </template>

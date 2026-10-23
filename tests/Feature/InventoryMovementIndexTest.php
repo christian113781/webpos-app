@@ -6,6 +6,7 @@ use App\Livewire\User\InventoryMovement\Index;
 use App\Models\Category;
 use App\Models\InventoryAdjustment;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -19,16 +20,10 @@ class InventoryMovementIndexTest extends TestCase
     {
         $user = User::factory()->create(['system_role' => 'user']);
         $category = Category::create(['name' => 'Medicine']);
-        $biogesic = Product::create([
-            'name' => 'Biogesic',
-            'category_id' => $category->id,
-            'unit' => 'piece',
-        ]);
-        $cocaCola = Product::create([
-            'name' => 'Coca-Cola',
-            'category_id' => $category->id,
-            'unit' => 'can',
-        ]);
+        $biogesic = $this->createVariant('Biogesic', $category->id, 'piece');
+        $cocaCola = $this->createVariant('Coca-Cola', $category->id, 'can');
+        $biogesic->update(['name' => '500mg']);
+        $cocaCola->update(['name' => '330ml']);
 
         $biogesic->inventoryMovements()->createMany([
             ['type' => 'stock_in', 'quantity' => 100, 'notes' => 'Initial stock'],
@@ -44,8 +39,11 @@ class InventoryMovementIndexTest extends TestCase
             ->get(route('user.inventory-movements'))
             ->assertOk()
             ->assertSee('Inventory Movements')
-            ->assertSee('Biogesic')
-            ->assertSee('Coca-Cola')
+            ->assertSee('Product')
+            ->assertSee('500mg')
+            ->assertSee('330ml')
+            ->assertDontSee('Biogesic')
+            ->assertDontSee('Coca-Cola')
             ->assertSee('Opening Stock')
             ->assertSee('Adjustment Out')
             ->assertSee('Adjustment In')
@@ -65,8 +63,8 @@ class InventoryMovementIndexTest extends TestCase
     public function test_movement_table_displays_times_in_philippines_timezone(): void
     {
         $user = User::factory()->create(['system_role' => 'user']);
-        $product = Product::create(['name' => 'Timezone test']);
-        $movement = $product->inventoryMovements()->create([
+        $variant = $this->createVariant('Timezone test');
+        $movement = $variant->inventoryMovements()->create([
             'type' => 'stock_in',
             'quantity' => 1,
             'notes' => 'Timezone test',
@@ -86,8 +84,10 @@ class InventoryMovementIndexTest extends TestCase
     {
         $user = User::factory()->create(['system_role' => 'user']);
         $category = Category::create(['name' => 'Medicine']);
-        $biogesic = Product::create(['name' => 'Biogesic', 'category_id' => $category->id]);
-        $cocaCola = Product::create(['name' => 'Coca-Cola', 'category_id' => $category->id]);
+        $biogesic = $this->createVariant('Biogesic', $category->id);
+        $cocaCola = $this->createVariant('Coca-Cola', $category->id);
+        $biogesic->update(['name' => 'Tablet']);
+        $cocaCola->update(['name' => 'Can']);
 
         $biogesic->inventoryMovements()->create([
             'type' => 'stock_in',
@@ -107,22 +107,22 @@ class InventoryMovementIndexTest extends TestCase
 
         Livewire::actingAs($user)
             ->test(Index::class)
-            ->assertSee('Biogesic')
-            ->assertSee('Coca-Cola')
+            ->assertSee('Tablet')
+            ->assertSee('Can')
             ->set('typeFilter', 'adjustment_out')
-            ->assertSee('Biogesic')
-            ->assertDontSee('Coca-Cola')
+            ->assertSee('Tablet')
+            ->assertDontSee('Can')
             ->set('typeFilter', '')
             ->set('search', 'Cola')
-            ->assertSee('Coca-Cola')
-            ->assertDontSee('Biogesic');
+            ->assertSee('Can')
+            ->assertDontSee('Tablet');
     }
 
     public function test_inventory_movements_are_sorted_newest_first(): void
     {
         $user = User::factory()->create(['system_role' => 'user']);
-        $olderProduct = Product::create(['name' => 'Older movement']);
-        $newerProduct = Product::create(['name' => 'Newest movement']);
+        $olderProduct = $this->createVariant('Older movement');
+        $newerProduct = $this->createVariant('Newest movement');
 
         $olderProduct->inventoryMovements()->create([
             'type' => 'stock_in',
@@ -147,7 +147,7 @@ class InventoryMovementIndexTest extends TestCase
         $this->actingAs(User::factory()->create(['system_role' => 'user']))
             ->get(route('user.inventory-movements'))
             ->assertOk()
-            ->assertSee('Adjust Stock')
+            ->assertSee('Stock Adjustment')
             ->assertSee(route('user.inventory-movements.adjust-stock'), false);
 
         $this->get(route('user.inventory-movements.adjust-stock'))
@@ -157,7 +157,7 @@ class InventoryMovementIndexTest extends TestCase
     public function test_movement_status_is_voided_for_adjustments_that_have_been_voided(): void
     {
         $user = User::factory()->create(['system_role' => 'user']);
-        $product = Product::create(['name' => 'Test product']);
+        $product = $this->createVariant('Test product');
         $adjustment = InventoryAdjustment::create([
             'reference' => 'ADJ-20261021223000-ABCDEFGH',
             'status' => 'voided',
@@ -179,5 +179,19 @@ class InventoryMovementIndexTest extends TestCase
             ->assertOk()
             ->assertSee('Voided')
             ->assertSee(route('user.inventory-movements.show', $movement), false);
+    }
+
+    private function createVariant(string $name, ?int $categoryId = null, string $unit = 'piece'): ProductVariant
+    {
+        $product = Product::create([
+            'name' => $name,
+            'category_id' => $categoryId,
+            'unit' => $unit,
+        ]);
+
+        return ProductVariant::create([
+            'product_id' => $product->id,
+            'name' => 'Default',
+        ]);
     }
 }

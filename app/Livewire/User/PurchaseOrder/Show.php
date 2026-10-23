@@ -3,8 +3,8 @@
 namespace App\Livewire\User\PurchaseOrder;
 
 use App\Models\InventoryMovement;
-use App\Models\Product;
 use App\Models\PurchaseOrder;
+use App\Models\ProductVariant;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
@@ -41,57 +41,53 @@ class Show extends Component
                 $receiptMovements = InventoryMovement::query()
                     ->where('type', 'stock_in')
                     ->where('notes', $receiptNotes)
-                    ->orderBy('product_id')
+                    ->orderBy('product_variant_id')
                     ->lockForUpdate()
                     ->get();
-                $productIds = $receiptMovements->pluck('product_id')->unique()->sort()->values();
+                $variantIds = $receiptMovements->pluck('product_variant_id')->unique()->sort()->values();
 
-                if ($productIds->isNotEmpty()) {
-                    $products = Product::query()
-                        ->whereIn('id', $productIds)
+                if ($variantIds->isNotEmpty()) {
+                    $variants = ProductVariant::query()
+                        ->with('product')
+                        ->whereIn('id', $variantIds)
                         ->orderBy('id')
                         ->lockForUpdate()
                         ->get()
                         ->keyBy('id');
 
-                    if ($products->count() !== $productIds->count()) {
+                    if ($variants->count() !== $variantIds->count()) {
                         throw ValidationException::withMessages([
-                            'void' => 'A product from this purchase order is no longer available. The order was not voided.',
+                            'void' => 'A product variant from this purchase order is no longer available. The order was not voided.',
                         ]);
                     }
 
-                    $movementsByProduct = InventoryMovement::query()
-                        ->whereIn('product_id', $productIds)
+                    $movementsByVariant = InventoryMovement::query()
+                        ->whereIn('product_variant_id', $variantIds)
                         ->whereIn('type', ['stock_in', 'stock_out'])
-                        ->orderBy('product_id')
+                        ->orderBy('product_variant_id')
                         ->lockForUpdate()
                         ->get()
-                        ->groupBy('product_id');
+                        ->groupBy('product_variant_id');
                     $receiptQuantities = $receiptMovements
-                        ->groupBy('product_id')
+                        ->groupBy('product_variant_id')
                         ->map(fn ($movements) => (float) $movements->sum('quantity'));
 
-                    foreach ($receiptQuantities as $productId => $quantity) {
-                        $onHand = (float) ($movementsByProduct->get($productId, collect())
+                    foreach ($receiptQuantities as $variantId => $quantity) {
+                        $onHand = (float) ($movementsByVariant->get($variantId, collect())
                             ->sum(fn (InventoryMovement $movement): float => (float) $movement->quantity * ($movement->type === 'stock_in' ? 1 : -1)));
-                        $product = $products->get($productId);
+                        $variant = $variants->get($variantId);
 
                         if ($onHand + 0.0005 < $quantity) {
                             throw ValidationException::withMessages([
-                                'void' => 'Cannot void this order because '.$product->name.' no longer has enough stock to reverse the received quantity.',
+                                'void' => 'Cannot void this order because '.$variant->product->name.' — '.$variant->name.' no longer has enough stock to reverse the received quantity.',
                             ]);
                         }
 
-                        $productReceipts = $receiptMovements->where('product_id', $productId);
-                        foreach ($productReceipts->groupBy('product_batch_id') as $productBatchId => $batchMovements) {
-                            InventoryMovement::create([
-                                'product_id' => $productId,
-                                'product_batch_id' => $productBatchId ?: null,
-                                'type' => 'stock_out',
-                                'quantity' => $batchMovements->sum('quantity'),
-                                'notes' => 'Voided purchase order '.$purchaseOrder->reference,
-                            ]);
-                        }
+                        $variant->inventoryMovements()->create([
+                            'type' => 'stock_out',
+                            'quantity' => $quantity,
+                            'notes' => 'Voided purchase order '.$purchaseOrder->reference,
+                        ]);
                     }
                 }
             }
@@ -114,7 +110,7 @@ class Show extends Component
     {
         return view('livewire.user.purchase-order.show', [
             'purchaseOrder' => PurchaseOrder::query()
-                ->with(['supplier', 'items.product', 'items.batches'])
+                ->with(['supplier', 'items.product', 'items.productVariant.product'])
                 ->findOrFail($this->purchaseOrderId),
         ]);
     }

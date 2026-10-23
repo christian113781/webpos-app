@@ -9,21 +9,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
+    public $timestamps = false;
+
     protected $fillable = [
         'category_id',
         'supplier_id',
         'name',
-        'image',
-        'sku',
-        'barcode',
-        'description',
-        'cost_price',
-        'selling_price',
         'unit',
-        'reorder_level',
-        'track_inventory',
+        'image',
+        'in_catalog',
         'track_expiry',
-        'status',
     ];
 
     protected $attributes = [
@@ -34,10 +29,7 @@ class Product extends Model
     {
         return [
             'unit' => ProductUnit::class,
-            'cost_price' => 'decimal:2',
-            'selling_price' => 'decimal:2',
-            'reorder_level' => 'decimal:3',
-            'track_inventory' => 'boolean',
+            'in_catalog' => 'boolean',
             'track_expiry' => 'boolean',
         ];
     }
@@ -47,9 +39,14 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
-    public function inventoryMovements(): HasMany
+    public function supplier(): BelongsTo
     {
-        return $this->hasMany(InventoryMovement::class);
+        return $this->belongsTo(Supplier::class);
+    }
+
+    public function variants(): HasMany
+    {
+        return $this->hasMany(ProductVariant::class);
     }
 
     public function batches(): HasMany

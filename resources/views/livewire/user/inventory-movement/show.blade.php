@@ -81,19 +81,24 @@
                     <tbody class="divide-y divide-gray-50">
                         @foreach ($items as $item)
                             @php
-                                $itemMovement = $originalMovements->firstWhere('product_id', $item->product_id);
+                                $itemMovement = $originalMovements->firstWhere('product_variant_id', $item->product_variant_id);
                                 $itemReason = $itemMovement && str_contains($itemMovement->notes, ' — ')
                                     ? \Illuminate\Support\Str::after($itemMovement->notes, ' — ')
                                     : '—';
                             @endphp
                             <tr>
-                                <th scope="row" class="px-5 py-3 text-start font-semibold text-gray-800">{{ $item->product?->name ?? 'Deleted product' }}</th>
+                                <th scope="row" class="px-5 py-3 text-start font-semibold text-gray-800">
+                                    {{ $item->productVariant?->product?->name ?? $item->product?->name ?? 'Deleted product' }}
+                                    @if ($item->productVariant)
+                                        <span class="block text-xs font-normal text-gray-500">{{ $item->productVariant->name }}</span>
+                                    @endif
+                                </th>
                                 <td class="px-3 py-3">
                                     <x-ui.badge :color="$item->type === 'adjustment_out' ? 'amber' : 'green'" dot>
                                         {{ \Illuminate\Support\Str::of($item->type)->replace('_', ' ')->title() }}
                                     </x-ui.badge>
                                 </td>
-                                <td class="px-3 py-3 text-end font-semibold tabular-nums">{{ rtrim(rtrim(number_format((float) $item->quantity, 3, '.', ','), '0'), '.') }} {{ strtolower($item->product?->unit?->label() ?? 'pcs') }}</td>
+                                <td class="px-3 py-3 text-end font-semibold tabular-nums">{{ rtrim(rtrim(number_format((float) $item->quantity, 3, '.', ','), '0'), '.') }} {{ strtolower($item->productVariant?->product?->unit?->label() ?? $item->product?->unit?->label() ?? 'pcs') }}</td>
                                 <td class="px-5 py-3 text-gray-500">{{ $itemReason }}</td>
                             </tr>
                         @endforeach
@@ -104,7 +109,7 @@
             <ul class="xl:hidden divide-y divide-gray-100" role="list" aria-label="Adjustment items">
                 @foreach ($items as $item)
                     @php
-                        $itemMovement = $originalMovements->firstWhere('product_id', $item->product_id);
+                        $itemMovement = $originalMovements->firstWhere('product_variant_id', $item->product_variant_id);
                         $itemReason = $itemMovement && str_contains($itemMovement->notes, ' — ')
                             ? \Illuminate\Support\Str::after($itemMovement->notes, ' — ')
                             : '—';
@@ -112,11 +117,16 @@
                     <li class="p-4 sm:px-5">
                         <div class="flex items-start justify-between gap-3">
                             <div class="min-w-0">
-                                <p class="font-semibold text-gray-900">{{ $item->product?->name ?? 'Deleted product' }}</p>
+                                <p class="font-semibold text-gray-900">
+                                    {{ $item->productVariant?->product?->name ?? $item->product?->name ?? 'Deleted product' }}
+                                    @if ($item->productVariant)
+                                        <span class="block text-xs font-normal text-gray-500">{{ $item->productVariant->name }}</span>
+                                    @endif
+                                </p>
                                 <p class="mt-1 text-xs text-gray-500">{{ $itemReason }}</p>
                             </div>
                             <div class="shrink-0 text-end">
-                                <p class="font-semibold text-gray-800 tabular-nums">{{ rtrim(rtrim(number_format((float) $item->quantity, 3, '.', ','), '0'), '.') }} {{ strtolower($item->product?->unit?->label() ?? 'pcs') }}</p>
+                                <p class="font-semibold text-gray-800 tabular-nums">{{ rtrim(rtrim(number_format((float) $item->quantity, 3, '.', ','), '0'), '.') }} {{ strtolower($item->productVariant?->product?->unit?->label() ?? $item->product?->unit?->label() ?? 'pcs') }}</p>
                                 <x-ui.badge :color="$item->type === 'adjustment_out' ? 'amber' : 'green'" dot>
                                     {{ \Illuminate\Support\Str::of($item->type)->replace('_', ' ')->title() }}
                                 </x-ui.badge>
