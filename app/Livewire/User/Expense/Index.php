@@ -17,22 +17,6 @@ class Index extends Component
 
     private const PER_PAGE = 10;
 
-    private const EXPENSE_CATEGORIES = [
-        'Bank & Payment Fees',
-        'Equipment',
-        'Fuel & Transportation',
-        'Government & Permits',
-        'Internet & Communication',
-        'Inventory / Supplies',
-        'Maintenance & Repair',
-        'Marketing & Advertising',
-        'Meals & Representation',
-        'Other',
-        'Rent',
-        'Salaries & Wages',
-        'Utilities',
-    ];
-
     public string $search = '';
 
     public string $monthFilter = '';
@@ -93,7 +77,7 @@ class Index extends Component
 
     public function editExpense(int $expenseId): void
     {
-        $expense = Expense::query()->where('status', 'active')->findOrFail($expenseId);
+        $expense = Expense::query()->active()->findOrFail($expenseId);
 
         $this->resetValidation();
         $this->expenseId = $expense->id;
@@ -109,7 +93,7 @@ class Index extends Component
     public function saveExpense(): void
     {
         $validated = $this->validate([
-            'category' => ['required', Rule::in(self::EXPENSE_CATEGORIES)],
+            'category' => ['required', Rule::in(Expense::categories())],
             'description' => ['required', 'string', 'max:255'],
             'amount' => ['required', 'numeric', 'decimal:0,2', 'min:0.01', 'max:9999999999.99'],
             'expenseDate' => ['required', 'date'],
@@ -128,7 +112,7 @@ class Index extends Component
 
         $isUpdating = $this->expenseId !== null;
         if ($isUpdating) {
-            Expense::query()->where('status', 'active')->findOrFail($this->expenseId)->update($expenseData);
+            Expense::query()->active()->findOrFail($this->expenseId)->update($expenseData);
         } else {
             Expense::create($expenseData);
         }
@@ -142,7 +126,7 @@ class Index extends Component
 
     public function confirmDelete(int $expenseId): void
     {
-        Expense::query()->where('status', 'active')->findOrFail($expenseId);
+        Expense::query()->active()->findOrFail($expenseId);
 
         $this->deletingExpenseId = $expenseId;
         $this->dispatch('open-modal', name: 'delete-expense');
@@ -150,7 +134,7 @@ class Index extends Component
 
     public function deleteExpense(): void
     {
-        Expense::query()->where('status', 'active')->findOrFail($this->deletingExpenseId ?? 0)->delete();
+        Expense::query()->active()->findOrFail($this->deletingExpenseId ?? 0)->delete();
 
         $lastPage = max(1, (int) ceil($this->filteredExpenses()->count() / self::PER_PAGE));
         if ($this->getPage() > $lastPage) {
@@ -170,22 +154,17 @@ class Index extends Component
     {
         return Expense::query()
             ->when($this->search !== '', function (Builder $query): void {
-                $search = '%'.$this->search.'%';
-                $query->where(function (Builder $query) use ($search): void {
-                    $query->where('category', 'like', $search)
-                        ->orWhere('description', 'like', $search)
-                        ->orWhere('payment_method', 'like', $search)
-                        ->orWhere('notes', 'like', $search);
-                });
+                $query->matchingSearch($this->search);
             })
             ->when($this->monthFilter !== '', function (Builder $query): void {
-                $month = Carbon::createFromFormat('!Y-m', $this->monthFilter);
-                $query->whereBetween('expense_date', [$month->copy()->startOfMonth()->toDateString(), $month->copy()->endOfMonth()->toDateString()]);
+                $query->forMonth($this->monthFilter);
             });
     }
 
     public function render()
     {
+        $summary = Expense::summaryForMonth(now());
+
         return view('livewire.user.expense.index', [
             'expenses' => $this->filteredExpenses()
                 ->when($this->sort === 'oldest', fn (Builder $query) => $query->orderBy('expense_date')->orderBy('id'))
@@ -193,13 +172,8 @@ class Index extends Component
                 ->when($this->sort === 'amount_low', fn (Builder $query) => $query->orderBy('amount')->orderByDesc('expense_date')->orderByDesc('id'))
                 ->when(! in_array($this->sort, ['oldest', 'amount_high', 'amount_low'], true), fn (Builder $query) => $query->orderByDesc('expense_date')->orderByDesc('id'))
                 ->paginate(self::PER_PAGE),
-            'expenseCategories' => self::EXPENSE_CATEGORIES,
-            'monthOptions' => Expense::query()
-                ->select('expense_date')
-                ->distinct()
-                ->orderByDesc('expense_date')
-                ->pluck('expense_date')
-                ->map(fn ($date) => Carbon::parse($date)->format('Y-m'))
+            'expenseCategories' => Expense::categories(),
+            'monthOptions' => Expense::availableMonths()
                 ->push(now()->format('Y-m'))
                 ->unique()
                 ->sortDesc()
@@ -208,18 +182,12 @@ class Index extends Component
                         ? 'This month'
                         : Carbon::createFromFormat('!Y-m', $month)->format('F Y'),
                 ]),
-            'totalExpenses' => Expense::where('status', 'active')->count(),
-            'recordedExpenses' => Expense::count(),
-            'monthTotal' => Expense::query()
-                ->where('status', 'active')
-                ->whereBetween('expense_date', [now()->startOfMonth()->toDateString(), now()->endOfMonth()->toDateString()])
-                ->sum('amount'),
-            'monthCount' => Expense::query()
-                ->where('status', 'active')
-                ->whereBetween('expense_date', [now()->startOfMonth()->toDateString(), now()->endOfMonth()->toDateString()])
-                ->count(),
+            'totalExpenses' => $summary->total_expenses,
+            'recordedExpenses' => $summary->recorded_expenses,
+            'monthTotal' => $summary->month_total,
+            'monthCount' => $summary->month_count,
             'deletingExpense' => $this->deletingExpenseId
-                ? Expense::find($this->deletingExpenseId)
+                ? Expense::query()->find($this->deletingExpenseId)
                 : null,
         ]);
     }

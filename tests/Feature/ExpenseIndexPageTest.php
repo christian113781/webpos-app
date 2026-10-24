@@ -40,7 +40,7 @@ class ExpenseIndexPageTest extends TestCase
             ->assertSee('12:07 AM')
             ->assertSee('Sort: Newest first')
             ->assertSee('₱1,250.50')
-            ->assertSee('Electric bill')
+            ->assertDontSee('Electric bill')
             ->assertSee('Bank Transfer')
             ->assertSee('aria-label="Edit Utilities expense"', false)
             ->assertSee('aria-label="Delete Utilities expense"', false)

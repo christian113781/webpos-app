@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>{{ config('app.name', 'TalipapaPOS') }} — Dashboard</title>
+    <title>{{ config('app.name', 'TalipapaPOS') }}</title>
     <link rel="icon" type="image/png" href="{{ asset('talipapapos/assets/img/favicon.png') }}">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <link rel="preconnect" href="https://fonts.googleapis.com">

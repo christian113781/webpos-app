@@ -173,7 +173,7 @@ body { background: #f5faf7; overflow-x: hidden; min-height: 100%; }
   [dir="rtl"] select.field { background-position: left .85rem center; }
 
   .ui-modal-backdrop {
-    position: fixed; inset: 0; z-index: 50;
+    position: fixed; inset: 0 0 auto; block-size: 100vh; block-size: 100dvh; z-index: 50;
     display: flex; align-items: center; justify-content: center; padding: 1rem;
     background: rgba(15,23,42,.55);
     opacity: 0; pointer-events: none; transition: opacity .2s ease;

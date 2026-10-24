@@ -215,7 +215,7 @@ class Create extends Component
 
             if ($validated['createExpense']) {
                 $purchaseOrder->expense()->create([
-                    'category' => 'Inventory / Supplies',
+                    'category' => 'Purchase Order',
                     'description' => 'Purchase order '.$reference.' — '.$supplier->name,
                     'amount' => $total,
                     'expense_date' => $validated['transactionDate'],

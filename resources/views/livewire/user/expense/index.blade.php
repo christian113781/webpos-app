@@ -77,8 +77,8 @@
                         <thead>
                             <tr class="border-b border-gray-100">
                                 <th scope="col" class="px-4 py-3 text-start font-semibold text-gray-500 text-xs uppercase tracking-wider">Date</th>
-                                <th scope="col" class="px-3 py-3 text-start font-semibold text-gray-500 text-xs uppercase tracking-wider">Category / Description</th>
-                                <th scope="col" class="px-3 py-3 text-start font-semibold text-gray-500 text-xs uppercase tracking-wider">Notes</th>
+                                <th scope="col" class="px-3 py-3 text-start font-semibold text-gray-500 text-xs uppercase tracking-wider">Category</th>
+                                <th scope="col" class="px-3 py-3 text-start font-semibold text-gray-500 text-xs uppercase tracking-wider">Description</th>
                                 <th scope="col" class="px-3 py-3 text-start font-semibold text-gray-500 text-xs uppercase tracking-wider">Payment method</th>
                                 <th scope="col" class="px-4 py-3 text-end font-semibold text-gray-500 text-xs uppercase tracking-wider">Amount</th>
                                 <th scope="col" class="px-4 py-3 text-end font-semibold text-gray-500 text-xs uppercase tracking-wider">Actions</th>
@@ -92,13 +92,12 @@
                                         <span class="block mt-0.5 text-xs text-gray-400">{{ $expense->created_at->copy()->timezone('Asia/Manila')->format('g:i A') }}</span>
                                     </td>
                                     <th scope="row" class="px-3 py-3 text-start">
-                                        <span class="block font-semibold text-gray-800">{{ $expense->category }}</span>
-                                        <span class="mt-0.5 block text-xs font-normal text-gray-500">{{ $expense->description }}</span>
+                                        <span class="font-semibold text-gray-800">{{ $expense->category }}</span>
                                         @if ($expense->status === 'voided')
                                             <span class="mt-1 inline-flex"><x-ui.badge color="red" dot>Voided</x-ui.badge></span>
                                         @endif
                                     </th>
-                                    <td class="px-3 py-3 text-gray-500">{{ $expense->notes ?: '—' }}</td>
+                                    <td class="px-3 py-3 text-gray-600">{{ $expense->description }}</td>
                                     <td class="px-3 py-3 text-gray-600">{{ $expense->payment_method ? \Illuminate\Support\Str::of($expense->payment_method)->replace('_', ' ')->title() : '—' }}</td>
                                     <td class="px-4 py-3 text-end whitespace-nowrap font-semibold text-gray-900">₱{{ number_format((float) $expense->amount, 2) }}</td>
                                     <td class="px-4 py-3 text-end">
@@ -131,55 +130,50 @@
                     </table>
                 </div>
 
-                <ul class="xl:hidden divide-y divide-gray-100" role="list" aria-label="Expense list">
+                <ul class="xl:hidden space-y-2 p-2 sm:p-3" role="list" aria-label="Expense list">
                     @foreach ($expenses as $expense)
-                        <li wire:key="expense-card-{{ $expense->id }}" class="p-4 sm:px-5">
-                            <div class="flex items-start justify-between gap-3">
-                                <div class="min-w-0 flex-1">
-                                    <p class="font-semibold text-gray-900 break-words">{{ $expense->category }}</p>
-                                    <p class="mt-0.5 text-sm text-gray-600 break-words">{{ $expense->description }}</p>
-                                    <p class="mt-1 text-xs text-gray-400">
-                                        {{ $expense->expense_date->format('M d, Y') }}
-                                        <span class="block mt-0.5">{{ $expense->created_at->copy()->timezone('Asia/Manila')->format('g:i A') }}</span>
-                                    </p>
-                                    @if ($expense->status === 'voided')
-                                        <span class="mt-2 inline-flex"><x-ui.badge color="red" dot>Voided</x-ui.badge></span>
-                                    @endif
+                        <li wire:key="expense-card-{{ $expense->id }}" class="min-w-0 rounded-lg border border-gray-100 bg-white p-3 shadow-sm">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        <p class="text-sm font-semibold leading-5 text-gray-900 break-words">{{ $expense->category }}</p>
+                                        @if ($expense->status === 'voided')
+                                            <x-ui.badge color="red" dot>Voided</x-ui.badge>
+                                        @endif
+                                    </div>
+                                    <p class="mt-0.5 text-xs leading-4 text-gray-600 break-words">{{ $expense->description }}</p>
                                 </div>
-                                <p class="shrink-0 whitespace-nowrap text-sm font-bold text-gray-900">₱{{ number_format((float) $expense->amount, 2) }}</p>
+                                <p class="shrink-0 whitespace-nowrap text-sm font-bold leading-5 text-gray-900">₱{{ number_format((float) $expense->amount, 2) }}</p>
                             </div>
-                            <dl class="mt-3 grid grid-cols-2 gap-3 text-xs">
-                                <div>
-                                    <dt class="font-medium text-gray-400">Payment method</dt>
-                                    <dd class="mt-0.5 text-gray-600">{{ $expense->payment_method ? \Illuminate\Support\Str::of($expense->payment_method)->replace('_', ' ')->title() : '—' }}</dd>
+                            <div class="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-gray-100 pt-2">
+                                <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-4 text-gray-500">
+                                    <span>{{ $expense->expense_date->format('M d, Y') }} · {{ $expense->created_at->copy()->timezone('Asia/Manila')->format('g:i A') }}</span>
+                                    <span class="text-gray-300" aria-hidden="true">|</span>
+                                    <span>{{ $expense->payment_method ? \Illuminate\Support\Str::of($expense->payment_method)->replace('_', ' ')->title() : '—' }}</span>
                                 </div>
-                                <div>
-                                    <dt class="font-medium text-gray-400">Notes</dt>
-                                    <dd class="mt-0.5 text-gray-600 break-words">{{ $expense->notes ?: '—' }}</dd>
-                                </div>
-                            </dl>
-                            @if ($expense->status === 'active')
-                                <div class="mt-3 flex justify-end gap-2 border-t border-gray-100 pt-2">
-                                <button
-                                    type="button"
-                                    wire:click="editExpense({{ $expense->id }})"
-                                    aria-label="Edit {{ $expense->category }} expense"
-                                    title="Edit"
-                                    class="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-gray-600 hover:bg-brand-50 hover:text-brand-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600"
-                                >
-                                    <x-ui.icon name="pencil" class="w-4 h-4" />
-                                </button>
-                                <button
-                                    type="button"
-                                    wire:click="confirmDelete({{ $expense->id }})"
-                                    aria-label="Delete {{ $expense->category }} expense"
-                                    title="Delete"
-                                    class="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600"
-                                >
-                                    <x-ui.icon name="trash" class="w-4 h-4" />
-                                </button>
-                                </div>
-                            @endif
+                                @if ($expense->status === 'active')
+                                    <div class="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            wire:click="editExpense({{ $expense->id }})"
+                                            aria-label="Edit {{ $expense->category }} expense"
+                                            title="Edit"
+                                            class="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-brand-50 hover:text-brand-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600"
+                                        >
+                                            <x-ui.icon name="pencil" class="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            wire:click="confirmDelete({{ $expense->id }})"
+                                            aria-label="Delete {{ $expense->category }} expense"
+                                            title="Delete"
+                                            class="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600"
+                                        >
+                                            <x-ui.icon name="trash" class="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                @endif
+                            </div>
                         </li>
                     @endforeach
                 </ul>

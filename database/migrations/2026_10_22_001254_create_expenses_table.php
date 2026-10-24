@@ -26,6 +26,9 @@ return new class extends Migration
                 ->constrained('purchase_orders')
                 ->nullOnDelete();
             $table->timestamps();
+            $table->index(['expense_date', 'id'], 'expenses_date_id_index');
+            $table->index(['amount', 'expense_date', 'id'], 'expenses_amount_date_id_index');
+            $table->index(['status', 'expense_date', 'amount'], 'expenses_status_date_amount_index');
         });
     }
 
