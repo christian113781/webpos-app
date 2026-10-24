@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Livewire\User\Product\Index;
 use App\Models\Category;
+use App\Models\InventoryAdjustment;
 use App\Models\Product;
-use App\Models\ProductVariant;
+use App\Models\PurchaseOrder;
+use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -39,6 +41,7 @@ class ProductIndexTest extends TestCase
 
         Livewire::actingAs($user)
             ->test(Index::class)
+            ->assertSee('col-span-2 flex justify-center xl:contents', false)
             ->assertSee('Spring Water')
             ->assertSee('Beverages')
             ->assertSee('Variant')
@@ -64,7 +67,7 @@ class ProductIndexTest extends TestCase
         $this->assertSame($product->id, $variant->product_id);
     }
 
-    public function test_product_can_be_deleted_after_confirmation_when_variants_have_no_stock_history(): void
+    public function test_product_can_be_permanently_deleted_when_unreferenced_by_purchase_or_adjustment_history(): void
     {
         $user = User::factory()->create(['system_role' => 'user']);
         $product = Product::create(['name' => 'Spring Water']);
@@ -81,14 +84,14 @@ class ProductIndexTest extends TestCase
             ->assertSee('Spring Water')
             ->call('delete')
             ->assertSet('deletingProductId', null)
-            ->assertDispatched('toast', message: 'Product deleted successfully.')
+            ->assertDispatched('toast', message: 'Product and inventory movement history permanently deleted.')
             ->assertSee('No products yet');
 
         $this->assertDatabaseMissing('products', ['id' => $product->id]);
         $this->assertDatabaseMissing('product_variants', ['id' => $variant->id]);
     }
 
-    public function test_product_with_inventory_history_cannot_be_deleted(): void
+    public function test_product_with_inventory_movements_can_be_permanently_deleted(): void
     {
         $user = User::factory()->create(['system_role' => 'user']);
         $product = Product::create(['name' => 'Spring Water']);
@@ -103,12 +106,69 @@ class ProductIndexTest extends TestCase
             ->call('confirmDelete', $product->id)
             ->call('delete')
             ->assertSet('deletingProductId', null)
+            ->assertDispatched('toast', message: 'Product and inventory movement history permanently deleted.');
+
+        $this->assertDatabaseMissing('products', ['id' => $product->id]);
+        $this->assertDatabaseMissing('product_variants', ['id' => $variant->id]);
+        $this->assertDatabaseMissing('inventory_movements', ['id' => $movement->id]);
+    }
+
+    public function test_product_referenced_by_purchase_order_cannot_be_deleted(): void
+    {
+        $supplier = Supplier::create(['name' => 'City Wholesale']);
+        $product = Product::create(['name' => 'Spring Water']);
+        $variant = $product->variants()->create(['name' => '500ml']);
+        $purchaseOrder = PurchaseOrder::create([
+            'supplier_id' => $supplier->id,
+            'reference' => 'PO-DELETE-TEST',
+            'order_date' => now()->toDateString(),
+        ]);
+        $purchaseOrder->items()->create([
+            'product_id' => $product->id,
+            'product_variant_id' => $variant->id,
+            'quantity' => 1,
+            'unit_cost' => 10,
+            'total' => 10,
+        ]);
+
+        Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
+            ->test(Index::class)
+            ->call('confirmDelete', $product->id)
+            ->call('delete')
+            ->assertSet('deletingProductId', null)
             ->assertDispatched('close-modal', name: 'delete-product')
-            ->assertDispatched('toast', message: 'Products with inventory movement history cannot be deleted.');
+            ->assertDispatched('toast', message: 'Products referenced by purchase orders or stock adjustments cannot be deleted.');
 
         $this->assertDatabaseHas('products', ['id' => $product->id]);
         $this->assertDatabaseHas('product_variants', ['id' => $variant->id]);
-        $this->assertDatabaseHas('inventory_movements', ['id' => $movement->id]);
+        $this->assertDatabaseHas('purchase_order_items', ['product_id' => $product->id]);
+    }
+
+    public function test_product_referenced_by_stock_adjustment_cannot_be_deleted(): void
+    {
+        $product = Product::create(['name' => 'Spring Water']);
+        $variant = $product->variants()->create(['name' => '500ml']);
+        $adjustment = InventoryAdjustment::create([
+            'reference' => 'ADJ-DELETE-TEST',
+            'status' => 'completed',
+        ]);
+        $adjustment->items()->create([
+            'product_id' => $product->id,
+            'product_variant_id' => $variant->id,
+            'type' => 'adjustment_in',
+            'quantity' => 1,
+        ]);
+
+        Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
+            ->test(Index::class)
+            ->call('confirmDelete', $product->id)
+            ->call('delete')
+            ->assertSet('deletingProductId', null)
+            ->assertDispatched('close-modal', name: 'delete-product')
+            ->assertDispatched('toast', message: 'Products referenced by purchase orders or stock adjustments cannot be deleted.');
+
+        $this->assertDatabaseHas('products', ['id' => $product->id]);
+        $this->assertDatabaseHas('inventory_adjustment_items', ['product_id' => $product->id]);
     }
 
     public function test_product_index_calculates_stock_and_stock_status_per_variant(): void

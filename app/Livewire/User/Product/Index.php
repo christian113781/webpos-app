@@ -3,9 +3,11 @@
 namespace App\Livewire\User\Product;
 
 use App\Models\Category;
+use App\Models\InventoryMovement;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -57,21 +59,33 @@ class Index extends Component
 
     public function delete(): void
     {
-        $product = Product::findOrFail($this->deletingProductId);
+        $result = DB::transaction(function (): array {
+            $product = Product::query()->lockForUpdate()->findOrFail($this->deletingProductId ?? 0);
 
-        if ($product->variants()->whereHas('inventoryMovements')->exists()) {
+            if ($product->purchaseOrderItems()->exists() || $product->inventoryAdjustmentItems()->exists()) {
+                return ['deleted' => false, 'image' => null];
+            }
+
+            InventoryMovement::query()
+                ->whereIn('product_variant_id', $product->variants()->select('id'))
+                ->delete();
+            $product->variants()->delete();
+            $imagePath = $product->image;
+            $product->delete();
+
+            return ['deleted' => true, 'image' => $imagePath];
+        });
+
+        if (! $result['deleted']) {
             $this->deletingProductId = null;
             $this->dispatch('close-modal', name: 'delete-product');
-            $this->dispatch('toast', message: 'Products with inventory movement history cannot be deleted.');
+            $this->dispatch('toast', message: 'Products referenced by purchase orders or stock adjustments cannot be deleted.');
 
             return;
         }
 
-        $imagePath = $product->image;
-        $product->delete();
-
-        if ($imagePath) {
-            Storage::disk('public')->delete($imagePath);
+        if ($result['image']) {
+            Storage::disk('public')->delete($result['image']);
         }
 
         $lastPage = max(1, (int) ceil($this->filteredProducts()->count() / self::PER_PAGE));
@@ -80,14 +94,14 @@ class Index extends Component
         }
 
         $this->deletingProductId = null;
-        $this->dispatch('toast', message: 'Product deleted successfully.');
+        $this->dispatch('toast', message: 'Product and inventory movement history permanently deleted.');
     }
 
     private function filteredProducts(): Builder
     {
         return Product::query()
             ->when($this->search !== '', function ($query): void {
-                $search = '%' . $this->search . '%';
+                $search = '%'.$this->search.'%';
                 $query->where(function ($query) use ($search): void {
                     $query->where('name', 'like', $search)
                         ->orWhereHas('variants', function ($variantQuery) use ($search): void {
@@ -118,12 +132,14 @@ class Index extends Component
             default => $products->orderBy('name'),
         };
 
+        $categories = Category::query()->orderBy('name')->get(['id', 'name']);
+
         return view('livewire.user.product.index', [
             'products' => $products->paginate(self::PER_PAGE),
-            'categories' => Category::query()->orderBy('name')->get(['id', 'name']),
+            'categories' => $categories,
             'totalProducts' => Product::count(),
             'totalVariants' => ProductVariant::count(),
-            'totalCategories' => Category::count(),
+            'totalCategories' => $categories->count(),
             'deletingProduct' => $this->deletingProductId
                 ? Product::find($this->deletingProductId)
                 : null,

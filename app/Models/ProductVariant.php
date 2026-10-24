@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -25,6 +26,14 @@ class ProductVariant extends Model
             'selling_price' => 'decimal:2',
             'reorder_level' => 'decimal:3',
         ];
+    }
+
+    public function scopeWithStockTotals(Builder $query): Builder
+    {
+        return $query->withSum([
+            'inventoryMovements as stock_in_quantity' => fn (Builder $query) => $query->where('type', 'stock_in'),
+            'inventoryMovements as stock_out_quantity' => fn (Builder $query) => $query->where('type', 'stock_out'),
+        ], 'quantity');
     }
 
     public function product(): BelongsTo

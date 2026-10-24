@@ -8,7 +8,6 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Supplier;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -33,9 +32,11 @@ class Edit extends Component
 
     public bool $hasVariants = false;
 
-    public string $baseVariantName = 'Default';
+    public string $baseVariantName = '';
 
     public array $variants = [];
+
+    public array $variantValidationErrors = [];
 
     public int $nextVariantId = 3;
 
@@ -59,6 +60,8 @@ class Edit extends Component
 
     public bool $removeImage = false;
 
+    private array $existingVariantIds = [];
+
     public function mount(Product $product): void
     {
         $this->product = $product;
@@ -75,7 +78,7 @@ class Edit extends Component
         $firstVariant = $variants->shift();
 
         if ($firstVariant) {
-            $this->baseVariantName = $firstVariant->name;
+            $this->baseVariantName = Product::variantNameInput($product->name, $firstVariant->name);
             $this->sku = (string) $firstVariant->sku;
             $this->barcode = $firstVariant->barcode;
             $this->cost_price = (string) $firstVariant->cost_price;
@@ -85,10 +88,13 @@ class Edit extends Component
         }
 
         $this->hasVariants = $variants->isNotEmpty();
+        if (! $this->hasVariants) {
+            $this->baseVariantName = '';
+        }
         $this->variants = $variants->values()->map(fn (ProductVariant $variant, int $index): array => [
             'id' => $index + 3,
             'recordId' => $variant->id,
-            'name' => $variant->name,
+            'name' => Product::variantNameInput($product->name, $variant->name),
             'sku' => $variant->sku ?? '',
             'barcode' => $variant->barcode ?? '',
             'costPrice' => (string) $variant->cost_price,
@@ -101,7 +107,13 @@ class Edit extends Component
 
     protected function rules(): array
     {
-        $variants = $this->product->variants()->get()->keyBy('id');
+        $this->existingVariantIds = $this->product->variants()
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+        $variants = collect($this->existingVariantIds)->mapWithKeys(
+            fn (int $id): array => [$id => $id]
+        );
         $rules = [
             'category_id' => [
                 'required',
@@ -147,9 +159,9 @@ class Edit extends Component
             $variantId = filter_var($variant['recordId'] ?? null, FILTER_VALIDATE_INT);
             $existingVariant = $variantId ? $variants->get($variantId) : null;
             $rules["variants.{$index}.sku"][] = Rule::unique('product_variants', 'sku')
-                ->ignore($existingVariant?->id);
+                ->ignore($existingVariant);
             $rules["variants.{$index}.barcode"][] = Rule::unique('product_variants', 'barcode')
-                ->ignore($existingVariant?->id);
+                ->ignore($existingVariant);
         }
 
         return $rules;
@@ -161,9 +173,18 @@ class Edit extends Component
         $this->barcode = filled($this->barcode) ? $this->barcode : null;
         $this->reorder_level = filled($this->reorder_level) ? $this->reorder_level : null;
 
-        $validated = $this->validate();
-        $this->validateSubmittedVariants($validated);
-        $this->validateUniqueCodes($validated);
+        try {
+            $validated = $this->validate();
+            $this->validateSubmittedVariants($validated);
+            $this->validateUniqueCodes($validated);
+        } catch (ValidationException $exception) {
+            $this->variantValidationErrors = collect($exception->errors())
+                ->filter(fn ($messages, $key) => str_starts_with($key, 'variants.'))
+                ->all();
+
+            throw $exception;
+        }
+        $this->variantValidationErrors = [];
 
         $removeImage = $this->removeImage;
         $newImagePath = $this->image?->storePublicly('products', 'public');
@@ -175,74 +196,28 @@ class Edit extends Component
         }
 
         try {
-            $oldImagePath = DB::transaction(function () use ($validated, $newImagePath, $removeImage): ?string {
-                $product = Product::query()->lockForUpdate()->findOrFail($this->product->id);
-                $oldImagePath = $product->image;
-                $imagePath = $newImagePath ?? ($removeImage ? null : $oldImagePath);
-
-                $product->update([
+            $oldImagePath = $this->product->updateWithVariants(
+                [
                     'category_id' => $validated['category_id'],
                     'supplier_id' => $validated['supplier_id'] ?: null,
                     'name' => $validated['name'],
                     'unit' => $validated['unit'],
-                    'image' => $imagePath,
-                ]);
-
-                $existingVariants = $product->variants()->lockForUpdate()->get()->keyBy('id');
-                $submittedVariants = $this->hasVariants ? ($validated['variants'] ?? []) : [];
-                $submittedIds = collect($submittedVariants)
-                    ->pluck('recordId')
-                    ->filter()
-                    ->map(fn ($id): int => (int) $id)
-                    ->push((int) $existingVariants->keys()->first())
-                    ->filter()
-                    ->unique();
-
-                $removedVariants = $existingVariants->except($submittedIds->all());
-                foreach ($removedVariants as $removedVariant) {
-                    $removedVariant->inventoryMovements()->delete();
-                    $removedVariant->delete();
-                }
-
-                $firstVariant = $existingVariants->first();
-                $firstVariantData = [
-                    'name' => filled($validated['baseVariantName']) ? $validated['baseVariantName'] : 'Default',
+                ],
+                [
+                    'name' => $this->hasVariants
+                        ? Product::formatVariantName($validated['name'], $validated['baseVariantName'])
+                        : $validated['name'],
                     'sku' => $validated['sku'],
                     'barcode' => $validated['barcode'] ?: null,
                     'cost_price' => $validated['cost_price'],
                     'selling_price' => $validated['selling_price'],
                     'reorder_level' => $validated['reorder_level'] ?: 0,
-                ];
-                if ($firstVariant) {
-                    $firstVariant->update($firstVariantData);
-                } else {
-                    $firstVariant = $product->variants()->create($firstVariantData);
-                }
-                $this->adjustVariantStock($firstVariant, (float) $validated['initial_stock']);
-
-                foreach ($submittedVariants as $variantData) {
-                    $variantId = filter_var($variantData['recordId'] ?? null, FILTER_VALIDATE_INT);
-                    $variant = $variantId ? $existingVariants->get($variantId) : null;
-
-                    $attributes = [
-                        'name' => $variantData['name'],
-                        'sku' => $variantData['sku'] ?: null,
-                        'barcode' => $variantData['barcode'] ?: null,
-                        'cost_price' => $variantData['costPrice'],
-                        'selling_price' => $variantData['sellingPrice'],
-                        'reorder_level' => $variantData['reorderLevel'] ?: 0,
-                    ];
-
-                    if ($variant) {
-                        $variant->update($attributes);
-                    } else {
-                        $variant = $product->variants()->create($attributes);
-                    }
-                    $this->adjustVariantStock($variant, (float) $variantData['initialStock']);
-                }
-
-                return $oldImagePath;
-            });
+                    'initial_stock' => $validated['initial_stock'],
+                ],
+                $this->variantData($validated),
+                $newImagePath,
+                $removeImage,
+            );
         } catch (Throwable $exception) {
             if ($newImagePath) {
                 Storage::disk('public')->delete($newImagePath);
@@ -259,34 +234,31 @@ class Edit extends Component
         $this->redirect(route('user.products'));
     }
 
-    private function adjustVariantStock(ProductVariant $variant, float $desiredOnHand): void
+    private function variantData(array $validated): array
     {
-        $stockIn = (float) $variant->inventoryMovements()->where('type', 'stock_in')->sum('quantity');
-        $stockOut = (float) $variant->inventoryMovements()->where('type', 'stock_out')->sum('quantity');
-        $difference = $desiredOnHand - ($stockIn - $stockOut);
-
-        if ($difference > 0) {
-            $variant->inventoryMovements()->create([
-                'type' => 'stock_in',
-                'quantity' => $difference,
-                'notes' => 'Stock adjustment from product edit',
-            ]);
-        } elseif ($difference < 0) {
-            $variant->inventoryMovements()->create([
-                'type' => 'stock_out',
-                'quantity' => abs($difference),
-                'notes' => 'Stock adjustment from product edit',
-            ]);
+        if (! $this->hasVariants) {
+            return [];
         }
+
+        return collect($validated['variants'] ?? [])
+            ->map(fn (array $variant): array => [
+                'record_id' => $variant['recordId'] ?? null,
+                'name' => Product::formatVariantName($validated['name'], $variant['name']),
+                'sku' => $variant['sku'] ?: null,
+                'barcode' => $variant['barcode'] ?: null,
+                'cost_price' => $variant['costPrice'],
+                'selling_price' => $variant['sellingPrice'],
+                'reorder_level' => $variant['reorderLevel'] ?: 0,
+                'initial_stock' => $variant['initialStock'],
+            ])
+            ->all();
     }
 
     private function validateSubmittedVariants(array $validated): void
     {
-        $existingIds = $this->product->variants()->pluck('id')->all();
-
         foreach ($validated['variants'] ?? [] as $variant) {
             $variantId = filter_var($variant['recordId'] ?? null, FILTER_VALIDATE_INT);
-            if ($variantId && ! in_array($variantId, $existingIds, true)) {
+            if ($variantId && ! in_array($variantId, $this->existingVariantIds, true)) {
                 throw ValidationException::withMessages([
                     'variants' => 'One of the submitted variants does not belong to this product.',
                 ]);

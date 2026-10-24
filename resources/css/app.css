@@ -1,5 +1,4 @@
 @import 'tailwindcss';
-@import "./landing.css";
 
 @source '../views';
 @source '../../app/Livewire';

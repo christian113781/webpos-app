@@ -8,7 +8,6 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Supplier;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -34,6 +33,8 @@ class Create extends Component
     public string $baseVariantName = '';
 
     public array $variants = [];
+
+    public array $variantValidationErrors = [];
 
     public string $sku = '';
 
@@ -90,13 +91,41 @@ class Create extends Component
         ];
     }
 
+    protected function validationAttributes(): array
+    {
+        return [
+            'baseVariantName' => 'variant name',
+            'cost_price' => 'cost price',
+            'selling_price' => 'selling price',
+            'initial_stock' => 'initial stock',
+            'reorder_level' => 'reorder level',
+            'variants.*.name' => 'variant name',
+            'variants.*.sku' => 'SKU',
+            'variants.*.barcode' => 'barcode',
+            'variants.*.costPrice' => 'cost price',
+            'variants.*.sellingPrice' => 'selling price',
+            'variants.*.initialStock' => 'initial stock',
+            'variants.*.reorderLevel' => 'reorder level',
+        ];
+    }
+
     public function save(bool $addAnother = false): void
     {
         $this->supplier_id = filled($this->supplier_id) ? $this->supplier_id : null;
         $this->barcode = filled($this->barcode) ? $this->barcode : null;
         $this->reorder_level = filled($this->reorder_level) ? $this->reorder_level : null;
 
-        $validated = $this->validate();
+        try {
+            $validated = $this->validate();
+        } catch (ValidationException $exception) {
+            $this->variantValidationErrors = collect($exception->errors())
+                ->filter(fn ($messages, $key) => str_starts_with($key, 'variants.'))
+                ->all();
+
+            throw $exception;
+        }
+
+        $this->variantValidationErrors = [];
         $this->validateVariantCodes($validated);
         $imagePath = $this->image?->storePublicly('products', 'public');
 
@@ -113,54 +142,10 @@ class Create extends Component
             'unit' => $validated['unit'],
             'image' => $imagePath,
         ];
+        $variantData = $this->variantData($validated);
 
         try {
-            DB::transaction(function () use ($productData, $validated): void {
-                $product = Product::create($productData);
-
-                $variantData = [[
-                    'name' => $this->hasVariants ? $validated['baseVariantName'] : 'Default',
-                    'sku' => $validated['sku'],
-                    'barcode' => $validated['barcode'] ?: null,
-                    'cost_price' => $validated['cost_price'],
-                    'selling_price' => $validated['selling_price'],
-                    'reorder_level' => $validated['reorder_level'] ?: 0,
-                    'initial_stock' => $validated['initial_stock'],
-                ]];
-
-                if ($this->hasVariants) {
-                    foreach ($validated['variants'] as $variant) {
-                        $variantData[] = [
-                            'name' => $variant['name'],
-                            'sku' => $variant['sku'] ?? null,
-                            'barcode' => $variant['barcode'] ?? null,
-                            'cost_price' => $variant['costPrice'],
-                            'selling_price' => $variant['sellingPrice'],
-                            'reorder_level' => $variant['reorderLevel'] ?? 0,
-                            'initial_stock' => $variant['initialStock'],
-                        ];
-                    }
-                }
-
-                foreach ($variantData as $data) {
-                    $variant = $product->variants()->create([
-                        'name' => $data['name'],
-                        'sku' => $data['sku'],
-                        'barcode' => $data['barcode'],
-                        'cost_price' => $data['cost_price'],
-                        'selling_price' => $data['selling_price'],
-                        'reorder_level' => $data['reorder_level'],
-                    ]);
-
-                    if ((float) $data['initial_stock'] > 0) {
-                        $variant->inventoryMovements()->create([
-                            'type' => 'stock_in',
-                            'quantity' => $data['initial_stock'],
-                            'notes' => 'Initial stock',
-                        ]);
-                    }
-                }
-            });
+            Product::createWithVariants($productData, $variantData);
         } catch (Throwable $exception) {
             if ($imagePath) {
                 Storage::disk('public')->delete($imagePath);
@@ -183,6 +168,7 @@ class Create extends Component
                 'expiration_date',
                 'image',
                 'variants',
+                'variantValidationErrors',
             );
             $this->hasVariants = false;
             $this->initial_stock = '0';
@@ -197,6 +183,39 @@ class Create extends Component
 
         session()->flash('toast', 'Product created successfully.');
         $this->redirect(route('user.products'));
+    }
+
+    private function variantData(array $validated): array
+    {
+        $variants = [[
+            'name' => $this->hasVariants
+                ? Product::formatVariantName($validated['name'], $validated['baseVariantName'])
+                : $validated['name'],
+            'sku' => $validated['sku'],
+            'barcode' => $validated['barcode'] ?: null,
+            'cost_price' => $validated['cost_price'],
+            'selling_price' => $validated['selling_price'],
+            'reorder_level' => $validated['reorder_level'] ?: 0,
+            'initial_stock' => $validated['initial_stock'],
+        ]];
+
+        if (! $this->hasVariants) {
+            return $variants;
+        }
+
+        foreach ($validated['variants'] as $variant) {
+            $variants[] = [
+                'name' => Product::formatVariantName($validated['name'], $variant['name']),
+                'sku' => $variant['sku'] ?? null,
+                'barcode' => $variant['barcode'] ?? null,
+                'cost_price' => $variant['costPrice'],
+                'selling_price' => $variant['sellingPrice'],
+                'reorder_level' => $variant['reorderLevel'] ?? 0,
+                'initial_stock' => $variant['initialStock'],
+            ];
+        }
+
+        return $variants;
     }
 
     public function render()

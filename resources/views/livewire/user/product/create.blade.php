@@ -137,16 +137,16 @@
                 isEditing: @js($isEditing),
                 hasVariants: $wire.entangle('hasVariants'),
                 baseVariantName: $wire.entangle('baseVariantName'),
-                baseVariantNameFollowsProductName: true,
                 taxClassification: 'vatable',
                 variants: $wire.entangle('variants'),
+                variantValidationErrors: $wire.entangle('variantValidationErrors'),
                 nextVariantId: @js($nextVariantId),
                 addVariant() {
                     const id = this.nextVariantId++;
                     const variant = {
                         id,
                         recordId: null,
-                        name: this.productName.trim(),
+                        name: '',
                         sku: '',
                         barcode: '',
                         costPrice: '',
@@ -157,23 +157,13 @@
                     this.generateVariantSku(variant);
                     this.variants.push(variant);
                 },
-                ensureVariantNames() {
-                    if (this.baseVariantNameFollowsProductName) {
-                        this.baseVariantName = this.productName.trim();
-                    }
-
-                    this.variants.forEach((variant, index) => {
-                        if (!variant.name.trim()) {
-                            variant.name = 'Variant #' + (Number(variant.id) - 1 || index + 2);
-                        }
-                    });
-                },
                 generateVariantSkus() {
                     this.variants.forEach(variant => this.generateVariantSku(variant));
                 },
-                variantTitle(variantName, index) {
-                    const name = variantName.trim() || 'Variant #' + (index + 2);
+                variantTitle(variantName, fallbackName) {
+                    const name = variantName.trim();
                     const product = this.productName.trim();
+                    if (!name) return product || fallbackName;
                     if (!product) return name;
 
                     const namePrefix = name.slice(0, product.length);
@@ -186,11 +176,14 @@
 
                     return suffix ? product + ': ' + suffix : product;
                 },
+                variantError(index, field) {
+                    return this.variantValidationErrors['variants.' + index + '.' + field]?.[0] ?? '';
+                },
                 removeVariant(id) {
                     this.variants = this.variants.filter(variant => variant.id !== id);
                 }
             }"
-                x-effect="if (hasVariants && !isEditing) { ensureVariantNames(); generateSku(productName); generateVariantSkus(); }"
+                x-effect="if (hasVariants && !isEditing) { generateSku(productName); generateVariantSkus(); }"
             >
                 <x-ui.card>
                     <div class="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -216,7 +209,7 @@
                                 <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01M8 6h8M8 12h8M8 18h8" />
                                 </svg>
-                                <h3 x-text="(baseVariantName.trim() || 'Variant #1')"></h3>
+                                <h3 x-text="variantTitle(baseVariantName, 'Variant #1')"></h3>
                             </div>
                             <button
                                 type="button"
@@ -235,10 +228,10 @@
                         >
                             <div x-cloak x-show="hasVariants">
                                 <x-ui.input
+                                    name="baseVariantName"
                                     label="Variant Name"
                                     required
                                     x-model="baseVariantName"
-                                    x-on:input="baseVariantNameFollowsProductName = false"
                                     placeholder="e.g. 500ml"
                                 />
                             </div>
@@ -308,6 +301,23 @@
                         </div>
                     </article>
 
+                    @php
+                        $variantErrors = collect($errors->getMessages())
+                            ->filter(fn ($messages, $key) => $key === 'variants')
+                            ->flatten()
+                            ->unique();
+                    @endphp
+                    @if ($variantErrors->isNotEmpty())
+                        <div class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+                            <p class="font-semibold">Please check the variant details:</p>
+                            <ul class="mt-1 list-inside list-disc space-y-0.5">
+                                @foreach ($variantErrors as $variantError)
+                                    <li>{{ $variantError }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+
                     <div x-cloak x-show="hasVariants" class="mt-3 space-y-3">
                         <template x-for="(variant, index) in variants" :key="variant.id">
                             <article class="rounded-xl border border-gray-200 bg-gray-50/50 p-3 sm:p-4">
@@ -316,7 +326,7 @@
                                         <svg class="h-4 w-4 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01M8 6h8M8 12h8M8 18h8" />
                                         </svg>
-                                        <h3 x-text="variantTitle(variant.name, index)"></h3>
+                                        <h3 x-text="variantTitle(variant.name, 'Variant #' + (index + 2))"></h3>
                                     </div>
                                     <button
                                         type="button"
@@ -329,67 +339,141 @@
                                 </div>
 
                                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                                    <x-ui.input
-                                        label="Variant Name"
-                                        required
-                                        x-model="variant.name"
-                                        x-on:input="generateVariantSku(variant)"
-                                        placeholder="e.g. 500ml"
-                                    />
-                                    <x-ui.input
-                                        label="SKU"
-                                        optional
-                                        x-model="variant.sku"
-                                        placeholder="SKU"
-                                    />
-                                    <x-ui.input
-                                        label="Barcode"
-                                        optional
-                                        x-model="variant.barcode"
-                                        placeholder="Scan or type barcode"
-                                    />
+                                    <div>
+                                        <label :for="'variant-' + variant.id + '-name'" class="mb-1.5 block text-xs font-semibold text-gray-600">
+                                            Variant Name <span class="text-red-500" aria-hidden="true">*</span>
+                                        </label>
+                                        <input
+                                            :id="'variant-' + variant.id + '-name'"
+                                            x-model="variant.name"
+                                            x-on:input="generateVariantSku(variant)"
+                                            type="text"
+                                            autocomplete="off"
+                                            placeholder="e.g. 500ml"
+                                            required
+                                            class="field"
+                                            :class="variantError(index, 'name') ? 'error' : ''"
+                                            :aria-invalid="variantError(index, 'name') ? 'true' : 'false'"
+                                            :aria-describedby="'variant-' + variant.id + '-name-error'"
+                                        >
+                                        <p x-cloak x-show="variantError(index, 'name')" :id="'variant-' + variant.id + '-name-error'" class="mt-1 text-xs text-red-500" role="alert" x-text="variantError(index, 'name')"></p>
+                                    </div>
+                                    <div>
+                                        <label :for="'variant-' + variant.id + '-sku'" class="mb-1.5 block text-xs font-semibold text-gray-600">
+                                            SKU <span class="font-normal text-gray-400">(optional)</span>
+                                        </label>
+                                        <input
+                                            :id="'variant-' + variant.id + '-sku'"
+                                            x-model="variant.sku"
+                                            type="text"
+                                            autocomplete="off"
+                                            placeholder="SKU"
+                                            class="field"
+                                            :class="variantError(index, 'sku') ? 'error' : ''"
+                                            :aria-invalid="variantError(index, 'sku') ? 'true' : 'false'"
+                                            :aria-describedby="'variant-' + variant.id + '-sku-error'"
+                                        >
+                                        <p x-cloak x-show="variantError(index, 'sku')" :id="'variant-' + variant.id + '-sku-error'" class="mt-1 text-xs text-red-500" role="alert" x-text="variantError(index, 'sku')"></p>
+                                    </div>
+                                    <div>
+                                        <label :for="'variant-' + variant.id + '-barcode'" class="mb-1.5 block text-xs font-semibold text-gray-600">
+                                            Barcode <span class="font-normal text-gray-400">(optional)</span>
+                                        </label>
+                                        <input
+                                            :id="'variant-' + variant.id + '-barcode'"
+                                            x-model="variant.barcode"
+                                            type="text"
+                                            autocomplete="off"
+                                            placeholder="Scan or type barcode"
+                                            class="field"
+                                            :class="variantError(index, 'barcode') ? 'error' : ''"
+                                            :aria-invalid="variantError(index, 'barcode') ? 'true' : 'false'"
+                                            :aria-describedby="'variant-' + variant.id + '-barcode-error'"
+                                        >
+                                        <p x-cloak x-show="variantError(index, 'barcode')" :id="'variant-' + variant.id + '-barcode-error'" class="mt-1 text-xs text-red-500" role="alert" x-text="variantError(index, 'barcode')"></p>
+                                    </div>
                                 </div>
 
                                 <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
-                                    <x-ui.input
-                                        label="Cost Price (₱)"
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        inputmode="decimal"
-                                        placeholder="0.00"
-                                        required
-                                        x-model="variant.costPrice"
-                                    />
-                                    <x-ui.input
-                                        label="Selling Price (₱)"
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        inputmode="decimal"
-                                        placeholder="0.00"
-                                        required
-                                        x-model="variant.sellingPrice"
-                                    />
-                                    <x-ui.input
-                                        label="Initial Stock"
-                                        type="number"
-                                        min="0"
-                                        step="1"
-                                        inputmode="numeric"
-                                        placeholder="0"
-                                        required
-                                        x-model="variant.initialStock"
-                                    />
-                                    <x-ui.input
-                                        label="Reorder Level"
-                                        type="number"
-                                        min="0"
-                                        step="1"
-                                        inputmode="numeric"
-                                        placeholder="0"
-                                        x-model="variant.reorderLevel"
-                                    />
+                                    <div>
+                                        <label :for="'variant-' + variant.id + '-cost'" class="mb-1.5 block text-xs font-semibold text-gray-600">
+                                            Cost Price (₱) <span class="text-red-500" aria-hidden="true">*</span>
+                                        </label>
+                                        <input
+                                            :id="'variant-' + variant.id + '-cost'"
+                                            x-model="variant.costPrice"
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            inputmode="decimal"
+                                            placeholder="0.00"
+                                            required
+                                            class="field"
+                                            :class="variantError(index, 'costPrice') ? 'error' : ''"
+                                            :aria-invalid="variantError(index, 'costPrice') ? 'true' : 'false'"
+                                            :aria-describedby="'variant-' + variant.id + '-cost-error'"
+                                        >
+                                        <p x-cloak x-show="variantError(index, 'costPrice')" :id="'variant-' + variant.id + '-cost-error'" class="mt-1 text-xs text-red-500" role="alert" x-text="variantError(index, 'costPrice')"></p>
+                                    </div>
+                                    <div>
+                                        <label :for="'variant-' + variant.id + '-selling'" class="mb-1.5 block text-xs font-semibold text-gray-600">
+                                            Selling Price (₱) <span class="text-red-500" aria-hidden="true">*</span>
+                                        </label>
+                                        <input
+                                            :id="'variant-' + variant.id + '-selling'"
+                                            x-model="variant.sellingPrice"
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            inputmode="decimal"
+                                            placeholder="0.00"
+                                            required
+                                            class="field"
+                                            :class="variantError(index, 'sellingPrice') ? 'error' : ''"
+                                            :aria-invalid="variantError(index, 'sellingPrice') ? 'true' : 'false'"
+                                            :aria-describedby="'variant-' + variant.id + '-selling-error'"
+                                        >
+                                        <p x-cloak x-show="variantError(index, 'sellingPrice')" :id="'variant-' + variant.id + '-selling-error'" class="mt-1 text-xs text-red-500" role="alert" x-text="variantError(index, 'sellingPrice')"></p>
+                                    </div>
+                                    <div>
+                                        <label :for="'variant-' + variant.id + '-stock'" class="mb-1.5 block text-xs font-semibold text-gray-600">
+                                            Initial Stock <span class="text-red-500" aria-hidden="true">*</span>
+                                        </label>
+                                        <input
+                                            :id="'variant-' + variant.id + '-stock'"
+                                            x-model="variant.initialStock"
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            inputmode="numeric"
+                                            placeholder="0"
+                                            required
+                                            class="field"
+                                            :class="variantError(index, 'initialStock') ? 'error' : ''"
+                                            :aria-invalid="variantError(index, 'initialStock') ? 'true' : 'false'"
+                                            :aria-describedby="'variant-' + variant.id + '-stock-error'"
+                                        >
+                                        <p x-cloak x-show="variantError(index, 'initialStock')" :id="'variant-' + variant.id + '-stock-error'" class="mt-1 text-xs text-red-500" role="alert" x-text="variantError(index, 'initialStock')"></p>
+                                    </div>
+                                    <div>
+                                        <label :for="'variant-' + variant.id + '-reorder'" class="mb-1.5 block text-xs font-semibold text-gray-600">
+                                            Reorder Level
+                                        </label>
+                                        <input
+                                            :id="'variant-' + variant.id + '-reorder'"
+                                            x-model="variant.reorderLevel"
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            inputmode="numeric"
+                                            placeholder="0"
+                                            class="field"
+                                            :class="variantError(index, 'reorderLevel') ? 'error' : ''"
+                                            :aria-invalid="variantError(index, 'reorderLevel') ? 'true' : 'false'"
+                                            :aria-describedby="'variant-' + variant.id + '-reorder-error'"
+                                        >
+                                        <p x-cloak x-show="variantError(index, 'reorderLevel')" :id="'variant-' + variant.id + '-reorder-error'" class="mt-1 text-xs text-red-500" role="alert" x-text="variantError(index, 'reorderLevel')"></p>
+                                    </div>
                                 </div>
                             </article>
                         </template>

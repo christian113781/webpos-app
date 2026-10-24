@@ -29,4 +29,18 @@ enum ProductUnit: string
             default => ucfirst($this->value),
         };
     }
+
+    public function inventoryLabel(): string
+    {
+        return match ($this) {
+            self::Liter => 'L',
+            self::Milliliter => 'mL',
+            default => $this->value === self::Piece->value ? 'pcs' : $this->value,
+        };
+    }
+
+    public function supportsFractionalQuantity(): bool
+    {
+        return in_array($this, [self::Kilogram, self::Gram, self::Liter, self::Milliliter], true);
+    }
 }

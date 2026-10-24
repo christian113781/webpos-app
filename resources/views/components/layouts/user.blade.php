@@ -148,7 +148,7 @@
     </script>
     @livewireStyles
 </head>
-<body class="font-poppins text-gray-800 antialiased" x-data="userDashboard()" x-cloak>
+<body class="font-poppins text-gray-800 antialiased" x-data="userDashboard()">
     <div id="sidebar-overlay"
          class="fixed inset-0 bg-gray-900/50 z-20 lg:hidden"
          aria-hidden="true"

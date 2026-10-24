@@ -23,7 +23,7 @@ class RoleBasedDashboardTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.dashboard'))
             ->assertOk()
-            ->assertSee('rel="icon" type="image/png" href="' . asset('talipapapos/assets/img/favicon.png') . '"', false)
+            ->assertSee('rel="icon" type="image/png" href="'.asset('talipapapos/assets/img/favicon.png').'"', false)
             ->assertSee('Admin dashboard');
     }
 
@@ -36,14 +36,16 @@ class RoleBasedDashboardTest extends TestCase
         $this->actingAs($user)
             ->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('rel="icon" type="image/png" href="' . asset('talipapapos/assets/img/favicon.png') . '"', false)
+            ->assertSee('rel="icon" type="image/png" href="'.asset('talipapapos/assets/img/favicon.png').'"', false)
             ->assertSee('User dashboard')
+            ->assertSee('<body class="font-poppins text-gray-800 antialiased" x-data="userDashboard()">', false)
+            ->assertDontSee('<body class="font-poppins text-gray-800 antialiased" x-data="userDashboard()" x-cloak>', false)
             ->assertSee('Primary navigation')
             ->assertSee('global-search', false)
             ->assertSee('nav-sub-link', false)
             ->assertSee('Low stock alert')
             ->assertSee('Prawn Crackers 60g has only 8 packs left.')
-            ->assertSee('action="' . route('logout') . '"', false);
+            ->assertSee('action="'.route('logout').'"', false);
     }
 
     public function test_users_cannot_access_the_other_role_dashboard(): void
@@ -70,7 +72,7 @@ class RoleBasedDashboardTest extends TestCase
             ->assertSee(str_replace('/', '\/', route('user.products')), false)
             ->assertSee(str_replace('/', '\/', route('user.suppliers')), false)
             ->assertSee(str_replace('/', '\/', route('user.purchase-orders')), false)
-            ->assertSee("name: 'Products', href: '" . str_replace('/', '\/', route('user.products')) . "', active: true", false);
+            ->assertSee("name: 'Products', href: '".str_replace('/', '\/', route('user.products'))."', active: true", false);
     }
 
     public function test_user_supplier_page_renders_the_empty_supplier_design(): void

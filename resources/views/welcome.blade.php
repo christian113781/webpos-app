@@ -17,15 +17,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
-  @vite(['resources/css/app.css', 'resources/js/app.js'])
+  @vite(['resources/css/app.css', 'resources/css/landing.css', 'resources/js/app.js'])
   @livewireStyles
   <script>document.documentElement.classList.add('js')</script>
 </head>
 <body class="font-poppins text-gray-800 antialiased bg-white"
-      x-data="{ menu: false, sticky: false }"
+      x-data="{ menu: false }"
       @keydown.escape.window="menu = false"
-      @resize.window.debounce.100ms="if (innerWidth >= 768) menu = false"
-      @scroll.window.passive="sticky = scrollY > 640">
+      @resize.window.debounce.100ms="if (innerWidth >= 768) menu = false">
 
 <!-- ───────── NAV ───────── -->
 <header class="sticky top-0 z-40 bg-white/85 backdrop-blur border-b border-brand-100">

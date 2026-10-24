@@ -42,19 +42,20 @@ class ProductCreatePageTest extends TestCase
             ->assertSee('@click="on = !on"', false)
             ->assertSee('x-model="hasVariants"', false)
             ->assertSee('Variant #1')
-            ->assertSee('x-effect="if (hasVariants && !isEditing) { ensureVariantNames(); generateSku(productName); generateVariantSkus(); }"', false)
-            ->assertSee("name: this.productName.trim()", false)
-            ->assertSee('baseVariantNameFollowsProductName: true', false)
-            ->assertSee('this.baseVariantName = this.productName.trim()', false)
-            ->assertSee('x-on:input="baseVariantNameFollowsProductName = false"', false)
+            ->assertSee('x-effect="if (hasVariants && !isEditing) { generateSku(productName); generateVariantSkus(); }"', false)
+            ->assertSee("name: ''", false)
+            ->assertDontSee('baseVariantNameFollowsProductName', false)
+            ->assertDontSee('ensureVariantNames()', false)
             ->assertSee('$wire.entangle(\'hasVariants\')', false)
             ->assertSee('$wire.entangle(\'baseVariantName\')', false)
             ->assertSee('$wire.entangle(\'variants\')', false)
             ->assertSee('$wire.entangle(\'name\')', false)
             ->assertSee('$wire.entangle(\'hasVariants\')', false)
             ->assertSee('$wire.entangle(\'baseVariantName\')', false)
-            ->assertSee('variantTitle(variant.name, index)', false)
-            ->assertSee('variantTitle(variantName, index)', false)
+            ->assertSee("variantTitle(baseVariantName, 'Variant #1')", false)
+            ->assertSee("variantTitle(variant.name, 'Variant #' + (index + 2))", false)
+            ->assertSee('variantTitle(variantName, fallbackName)', false)
+            ->assertSee('if (!name) return product || fallbackName;', false)
             ->assertSee('namePrefix.toLowerCase() === product.toLowerCase()', false)
             ->assertSee("name.slice(product.length).replace(/^[\\s:,-]+/, '').trim()", false)
             ->assertSee('baseVariantName.trim()', false)
@@ -64,6 +65,10 @@ class ProductCreatePageTest extends TestCase
             ->assertSee('Add Another Variant')
             ->assertSee('variant.name')
             ->assertSee('variant.costPrice')
+            ->assertSee('$wire.entangle(\'variantValidationErrors\')', false)
+            ->assertSee("variantError(index, 'costPrice')", false)
+            ->assertSee("variantError(index, 'sellingPrice')", false)
+            ->assertSee("variantError(index, 'initialStock')", false)
             ->assertSee('Tax Settings')
             ->assertSee('VAT classification')
             ->assertSee('VATable')
@@ -189,7 +194,7 @@ class ProductCreatePageTest extends TestCase
             ->assertDontSee('Inactive supplier');
     }
 
-    public function test_product_creation_saves_default_variant_and_initial_stock_movement(): void
+    public function test_product_creation_uses_product_name_for_single_variant_and_saves_initial_stock(): void
     {
         $user = User::factory()->create(['system_role' => 'user']);
         $category = Category::create(['name' => 'Beverages']);
@@ -218,7 +223,7 @@ class ProductCreatePageTest extends TestCase
         $this->assertSame('bottle', $product->unit->value);
         $this->assertDatabaseHas('product_variants', [
             'product_id' => $product->id,
-            'name' => 'Default',
+            'name' => 'Spring Water',
             'sku' => 'WAT-001',
             'barcode' => '123456789',
             'cost_price' => '10.50',
@@ -315,7 +320,7 @@ class ProductCreatePageTest extends TestCase
         Storage::disk('public')->assertExists($product->image);
         $this->assertDatabaseHas('product_variants', [
             'product_id' => $product->id,
-            'name' => 'Default',
+            'name' => 'Spring Water',
             'sku' => 'WAT-002',
         ]);
         $this->assertDatabaseCount('inventory_movements', 0);
@@ -331,7 +336,7 @@ class ProductCreatePageTest extends TestCase
             ->set('name', 'Water Bottle')
             ->set('unit', 'bottle')
             ->set('hasVariants', true)
-            ->set('baseVariantName', '500ML')
+            ->set('baseVariantName', '500ml')
             ->set('sku', 'WAT-BOT-1')
             ->set('cost_price', '10')
             ->set('selling_price', '15')
@@ -355,28 +360,71 @@ class ProductCreatePageTest extends TestCase
         $this->assertSame('bottle', $product->unit->value);
         $this->assertDatabaseHas('product_variants', [
             'product_id' => $product->id,
-            'name' => '500ML',
+            'name' => 'Water Bottle: 500ml',
             'sku' => 'WAT-BOT-1',
             'selling_price' => '15.00',
         ]);
         $this->assertDatabaseHas('product_variants', [
             'product_id' => $product->id,
-            'name' => '1L',
+            'name' => 'Water Bottle: 1L',
             'sku' => 'WAT-BOT-2',
             'barcode' => '111222333',
             'selling_price' => '25.00',
         ]);
 
         $this->assertDatabaseHas('inventory_movements', [
-            'product_variant_id' => $product->variants()->where('name', '500ML')->value('id'),
+            'product_variant_id' => $product->variants()->where('name', 'Water Bottle: 500ml')->value('id'),
             'type' => 'stock_in',
             'quantity' => 12,
         ]);
         $this->assertDatabaseHas('inventory_movements', [
-            'product_variant_id' => $product->variants()->where('name', '1L')->value('id'),
+            'product_variant_id' => $product->variants()->where('name', 'Water Bottle: 1L')->value('id'),
             'type' => 'stock_in',
             'quantity' => 7,
         ]);
+    }
+
+    public function test_additional_variant_required_fields_show_validation_errors(): void
+    {
+        Livewire::actingAs(User::factory()->create(['system_role' => 'user']))
+            ->test(Create::class)
+            ->set('category_id', (string) Category::create(['name' => 'Beverages'])->id)
+            ->set('name', 'Water Bottle')
+            ->set('hasVariants', true)
+            ->set('baseVariantName', '')
+            ->set('sku', 'WAT-BOT-1')
+            ->set('cost_price', '')
+            ->set('selling_price', '')
+            ->set('variants', [[
+                'id' => 3,
+                'name' => '',
+                'sku' => '',
+                'barcode' => '',
+                'costPrice' => '',
+                'sellingPrice' => '',
+                'initialStock' => '',
+                'reorderLevel' => '',
+            ]])
+            ->call('save')
+            ->assertHasErrors([
+                'baseVariantName' => 'required',
+                'cost_price' => 'required',
+                'selling_price' => 'required',
+                'variants.0.name' => 'required',
+                'variants.0.costPrice' => 'required',
+                'variants.0.sellingPrice' => 'required',
+                'variants.0.initialStock' => 'required',
+            ])
+            ->assertSet('variantValidationErrors', fn ($errors) => ($errors['variants.0.costPrice'][0] ?? null) === 'The cost price field is required.')
+            ->assertSee('The variant name field is required.')
+            ->assertSee('The cost price field is required.')
+            ->assertSee('The selling price field is required.')
+            ->assertSee("variantError(index, 'costPrice')", false)
+            ->assertSee("variantError(index, 'sellingPrice')", false)
+            ->assertSee("variantError(index, 'initialStock')", false)
+            ->assertDontSee('Please check the variant details:');
+
+        $this->assertDatabaseCount('products', 0);
     }
 
     public function test_product_creation_rejects_duplicate_skus_across_submitted_variants(): void

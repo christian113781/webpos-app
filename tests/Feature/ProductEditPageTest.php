@@ -59,10 +59,11 @@ class ProductEditPageTest extends TestCase
             ->assertOk()
             ->assertDontSee('Track batches')
             ->assertSee('x-model="hasVariants"', false)
-            ->assertSee("if (this.isEditing && variant.recordId) return;", false)
-            ->assertSee("name: this.productName.trim()", false)
-            ->assertSee("this.generateVariantSku(variant);", false)
-            ->assertSee('variantTitle(variant.name, index)', false)
+            ->assertSee('if (this.isEditing && variant.recordId) return;', false)
+            ->assertSee("name: ''", false)
+            ->assertSee('this.generateVariantSku(variant);', false)
+            ->assertSee("variantTitle(variant.name, 'Variant #' + (index + 2))", false)
+            ->assertSee('$wire.entangle(\'variantValidationErrors\')', false)
             ->assertSee('This product has multiple variants')
             ->assertSee('Edit Product')
             ->assertSee('Update Product')
@@ -124,6 +125,7 @@ class ProductEditPageTest extends TestCase
         $product->refresh();
         $variant->refresh();
         $this->assertSame('Spring Water 500mL', $product->name);
+        $this->assertSame('Spring Water 500mL', $variant->name);
         $this->assertSame('11.25', $variant->cost_price);
         $this->assertSame('16.50', $variant->selling_price);
         $this->assertDatabaseHas('inventory_movements', [
@@ -228,6 +230,7 @@ class ProductEditPageTest extends TestCase
             ->test(Edit::class, ['product' => $product])
             ->assertSet('hasVariants', false)
             ->set('hasVariants', true)
+            ->set('baseVariantName', '500ml')
             ->set('variants', [[
                 'id' => 3,
                 'recordId' => null,
@@ -244,6 +247,8 @@ class ProductEditPageTest extends TestCase
             ->assertRedirect(route('user.products'));
 
         $secondary = $product->variants()->where('sku', 'WAT-1L')->firstOrFail();
+        $this->assertSame('Water Bottle: 500ml', $primary->fresh()->name);
+        $this->assertSame('Water Bottle: 1L', $secondary->name);
         $movement = $secondary->inventoryMovements()->firstOrFail();
         $this->assertDatabaseHas('inventory_movements', [
             'id' => $movement->id,
@@ -262,5 +267,63 @@ class ProductEditPageTest extends TestCase
         $this->assertDatabaseMissing('product_variants', ['id' => $secondary->id]);
         $this->assertDatabaseMissing('inventory_movements', ['id' => $movement->id]);
         $this->assertDatabaseHas('product_variants', ['id' => $primary->id]);
+    }
+
+    public function test_edit_normalizes_existing_variant_names_and_updates_prefix_when_product_name_changes(): void
+    {
+        $category = Category::create(['name' => 'Beverages']);
+        $product = Product::create(['category_id' => $category->id, 'name' => 'Water Bottle']);
+        $primary = $product->variants()->create([
+            'name' => 'Water Bottle: 500ml',
+            'sku' => 'WAT-500',
+            'cost_price' => 10,
+            'selling_price' => 15,
+        ]);
+        $secondary = $product->variants()->create([
+            'name' => 'Water Bottle: 1L',
+            'sku' => 'WAT-1L',
+            'cost_price' => 18,
+            'selling_price' => 25,
+        ]);
+
+        Livewire::test(Edit::class, ['product' => $product])
+            ->assertSet('baseVariantName', '500ml')
+            ->assertSet('variants.0.name', '1L')
+            ->set('name', 'Reusable Bottle')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('user.products'));
+
+        $this->assertSame('Reusable Bottle: 500ml', $primary->fresh()->name);
+        $this->assertSame('Reusable Bottle: 1L', $secondary->fresh()->name);
+    }
+
+    public function test_edit_surfaces_variant_field_validation_errors_like_create(): void
+    {
+        $category = Category::create(['name' => 'Beverages']);
+        $product = Product::create(['category_id' => $category->id, 'name' => 'Water Bottle']);
+        $product->variants()->create([
+            'name' => 'Water Bottle: 500ml',
+            'sku' => 'WAT-500',
+            'cost_price' => 10,
+            'selling_price' => 15,
+        ]);
+
+        Livewire::test(Edit::class, ['product' => $product])
+            ->set('hasVariants', true)
+            ->set('variants', [[
+                'id' => 3,
+                'recordId' => null,
+                'name' => '1L',
+                'sku' => '',
+                'barcode' => '',
+                'costPrice' => '',
+                'sellingPrice' => '',
+                'initialStock' => '',
+                'reorderLevel' => '',
+            ]])
+            ->call('save')
+            ->assertHasErrors(['variants.0.costPrice' => 'required'])
+            ->assertSet('variantValidationErrors', fn (array $errors): bool => isset($errors['variants.0.costPrice']));
     }
 }

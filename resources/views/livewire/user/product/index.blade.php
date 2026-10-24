@@ -4,9 +4,11 @@
     </x-ui.page-header>
 
     <section aria-label="Product summary" class="grid grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
-        <x-ui.stat-card compact label="Total products" :value="$totalProducts" icon="box" color="green" />
-        <x-ui.stat-card compact label="Total variants" :value="$totalVariants" icon="box" color="teal" />
-        <x-ui.stat-card compact label="Categories" :value="$totalCategories" icon="inbox" color="blue" />
+        <x-ui.stat-card compact label="Products" :value="$totalProducts" icon="box" color="green" />
+        <x-ui.stat-card compact label="Variants" :value="$totalVariants" icon="box" color="teal" />
+        <div class="col-span-2 flex justify-center xl:contents">
+            <x-ui.stat-card compact label="Categories" :value="$totalCategories" icon="inbox" color="blue" class="w-full" />
+        </div>
     </section>
 
     <x-ui.card flush aria-labelledby="product-list-heading" class="product-list-container">
@@ -136,7 +138,13 @@
                                                 <a href="{{ route('user.products.edit', $product) }}" wire:navigate aria-label="Edit {{ $product->name }}" title="Edit product" class="table-action rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50 transition-colors">
                                                     <x-ui.icon name="pencil" class="w-4 h-4" />
                                                 </a>
-                                                <button type="button" wire:click="confirmDelete({{ $product->id }})" aria-label="Delete {{ $product->name }}" title="Delete product" class="table-action rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                                                <button
+                                                    type="button"
+                                                    wire:click="confirmDelete({{ $product->id }})"
+                                                    aria-label="Delete {{ $product->name }}"
+                                                    title="Delete product"
+                                                    class="table-action rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                                >
                                                     <x-ui.icon name="trash" class="w-4 h-4" />
                                                 </button>
                                             </div>
@@ -161,7 +169,13 @@
                                         <a href="{{ route('user.products.edit', $product) }}" wire:navigate aria-label="Edit {{ $product->name }}" title="Edit product" class="w-11 h-11 flex items-center justify-center rounded-xl text-gray-500 hover:text-brand-600 hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600">
                                             <x-ui.icon name="pencil" class="w-5 h-5" />
                                         </a>
-                                        <button type="button" wire:click="confirmDelete({{ $product->id }})" aria-label="Delete {{ $product->name }}" title="Delete product" class="w-11 h-11 flex items-center justify-center rounded-xl text-gray-500 hover:text-red-600 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600">
+                                        <button
+                                            type="button"
+                                            wire:click="confirmDelete({{ $product->id }})"
+                                            aria-label="Delete {{ $product->name }}"
+                                            title="Delete product"
+                                            class="w-11 h-11 flex items-center justify-center rounded-xl text-gray-500 hover:text-red-600 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600"
+                                        >
                                             <x-ui.icon name="trash" class="w-5 h-5" />
                                         </button>
                                     </div>
@@ -183,7 +197,12 @@
                                     </div>
                                     <div class="flex shrink-0 items-center gap-2">
                                         <a href="{{ route('user.products.edit', $product) }}" wire:navigate aria-label="Edit {{ $product->name }}" class="text-sm font-semibold text-brand-700">Edit</a>
-                                        <button type="button" wire:click="confirmDelete({{ $product->id }})" aria-label="Delete {{ $product->name }}" class="w-11 h-11 flex items-center justify-center rounded-xl text-gray-500 hover:text-red-600 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600">
+                                        <button
+                                            type="button"
+                                            wire:click="confirmDelete({{ $product->id }})"
+                                            aria-label="Delete {{ $product->name }}"
+                                            class="w-11 h-11 flex items-center justify-center rounded-xl text-gray-500 hover:text-red-600 hover:bg-red-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600"
+                                        >
                                             <x-ui.icon name="trash" class="w-5 h-5" />
                                         </button>
                                     </div>
@@ -202,13 +221,13 @@
 
     <x-ui.confirm-modal
         name="delete-product"
-        title="Delete product?"
-        confirm="Delete"
+        title="Delete product permanently?"
+        confirm="Delete permanently"
         wire:click="delete"
         target="delete"
     >
         @if ($deletingProduct)
-            <strong class="text-gray-800">{{ $deletingProduct->name }}</strong> and its variants will be removed. Products with inventory movement history cannot be deleted.
+            <strong class="text-gray-800">{{ $deletingProduct->name }}</strong>, its variants, and inventory movement history will be permanently deleted. Products referenced by purchase orders or stock adjustments cannot be deleted.
         @endif
     </x-ui.confirm-modal>
 </main>

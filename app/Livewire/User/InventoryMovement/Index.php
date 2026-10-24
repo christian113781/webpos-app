@@ -2,7 +2,6 @@
 
 namespace App\Livewire\User\InventoryMovement;
 
-use App\Models\InventoryAdjustment;
 use App\Models\InventoryMovement;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -39,36 +38,8 @@ class Index extends Component
     {
         return InventoryMovement::query()
             ->with(['productVariant.product:id,name,unit'])
-            ->when($this->search !== '', function ($query): void {
-                $search = '%'.$this->search.'%';
-                $query->where(function ($query) use ($search): void {
-                    $query->where('notes', 'like', $search)
-                        ->orWhereHas('productVariant.product', fn ($productQuery) => $productQuery->where('name', 'like', $search));
-                });
-            })
-            ->when($this->typeFilter !== '', function ($query): void {
-                match ($this->typeFilter) {
-                    'opening_stock' => $query->where('type', 'stock_in')->where(function ($query): void {
-                        $query->where('notes', 'like', '%initial%')
-                            ->orWhere('notes', 'like', '%opening%');
-                    }),
-                    'adjustment_in' => $query->where(function ($query): void {
-                        $query->where('type', 'adjustment_in')
-                            ->orWhere(function ($query): void {
-                                $query->where('type', 'stock_in')->where('notes', 'like', '%adjustment%');
-                            });
-                    }),
-                    'adjustment_out' => $query->where(function ($query): void {
-                        $query->where('type', 'adjustment_out')
-                            ->orWhere(function ($query): void {
-                                $query->where('type', 'stock_out')->where('notes', 'like', '%adjustment%');
-                            });
-                    }),
-                    'stock_in' => $query->where('type', 'stock_in'),
-                    'stock_out' => $query->where('type', 'stock_out'),
-                    default => null,
-                };
-            });
+            ->when($this->search !== '', fn ($query) => $query->matchingSearch($this->search))
+            ->when($this->typeFilter !== '', fn ($query) => $query->ofDisplayType($this->typeFilter));
     }
 
     public function render()
@@ -78,42 +49,25 @@ class Index extends Component
             ->orderByDesc('id')
             ->paginate(self::PER_PAGE);
         $references = $movements->getCollection()
-            ->map(fn (InventoryMovement $movement): ?string => $this->adjustmentReference($movement->notes))
+            ->map(fn (InventoryMovement $movement): ?string => $movement->adjustmentReference())
             ->filter()
             ->unique()
             ->values();
-        $adjustmentStatuses = $references->isEmpty()
-            ? collect()
-            : InventoryAdjustment::query()
-                ->whereIn('reference', $references)
-                ->get(['reference', 'status', 'voided_at'])
-                ->mapWithKeys(fn (InventoryAdjustment $adjustment): array => [
-                    $adjustment->reference => $adjustment->status === 'voided' || $adjustment->voided_at
-                        ? 'Voided'
-                        : 'Completed',
-                ]);
+        $adjustmentStatuses = InventoryMovement::statusesForAdjustmentReferences($references);
 
         $movements->getCollection()->each(function (InventoryMovement $movement) use ($adjustmentStatuses): void {
-            $reference = $this->adjustmentReference($movement->notes);
+            $reference = $movement->adjustmentReference();
             $movement->setAttribute('adjustment_status', $reference
                 ? ($adjustmentStatuses->get($reference) ?? 'Completed')
                 : 'Completed');
         });
+        $summary = InventoryMovement::summary();
 
         return view('livewire.user.inventory-movement.index', [
             'movements' => $movements,
-            'totalMovements' => InventoryMovement::count(),
-            'totalStockIn' => InventoryMovement::whereIn('type', ['stock_in', 'adjustment_in'])->sum('quantity'),
-            'totalStockOut' => InventoryMovement::whereIn('type', ['stock_out', 'adjustment_out'])->sum('quantity'),
+            'totalMovements' => $summary->total_movements,
+            'totalStockIn' => $summary->total_stock_in,
+            'totalStockOut' => $summary->total_stock_out,
         ]);
-    }
-
-    private function adjustmentReference(?string $notes): ?string
-    {
-        if (! preg_match('/^(?:Adjustment|Voided adjustment) (ADJ-\d{14}-[A-Z0-9]{8})(?:\s|$)/', (string) $notes, $matches)) {
-            return null;
-        }
-
-        return $matches[1];
     }
 }
