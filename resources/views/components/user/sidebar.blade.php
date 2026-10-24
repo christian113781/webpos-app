@@ -32,7 +32,7 @@
           <!-- dropdown group: icon + label + chevron, then text-only links -->
           <div x-show="section.collapsible" style="display:none">
             <button type="button"
-                    class="nav-link w-full flex items-center gap-3 px-2 lg:px-3 py-2.5 rounded-xl text-sm hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                    class="nav-link w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-brand-50 hover:text-brand-700 transition-colors"
                     :class="section.items.some(i => i.active) ? 'text-brand-700 font-semibold' : 'text-gray-700'"
                     @click="onGroupClick(section)" :aria-expanded="String(!!section.open)" :aria-controls="'nav-group-' + section.label.toLowerCase()" :title="section.label">
               <svg class="w-5 h-5 flex-shrink-0" :class="section.items.some(i => i.active) ? 'text-brand-500' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
